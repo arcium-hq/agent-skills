@@ -7,9 +7,11 @@
 | "Failed to fetch MXE public key" | ARX nodes not ready | Add retry with exponential backoff |
 | Computation never finalizes | Missing/incorrect callback | Verify `callback_ix` registration |
 | Type mismatch in circuit | `Enc` owner inconsistency | Match `Shared`/`Mxe` throughout |
-| "Stack height exceeded" | Too many CPIs | Reduce instruction nesting |
+| "Stack height exceeded" | Too many CPIs (Cross-Program Invocations) | Reduce instruction nesting |
 | "Account not initialized" | Missing `init_comp_def` | Call initialization first |
 | "Invalid cluster" | Wrong network | Verify cluster offset |
+| "Decryption failed" / garbled output | Nonce reuse or mismatch | Use unique nonce per encryption |
+| Ciphertext size mismatch | Wrong array size | Each value = 32 bytes (see table below) |
 
 ## MXE Public Key is Null
 
@@ -60,13 +62,66 @@ const COMP_DEF_OFFSET_FLIP: u32 = comp_def_offset("flip");
 
 ## Ciphertext Size Mismatch
 
-Match instruction parameter size to encrypted data:
+**RescueCipher produces 32 bytes per value**, regardless of the original type:
 
-| Encrypted Type | Ciphertext Size |
-|----------------|-----------------|
-| `u8`, `bool` | 32 bytes |
-| `u64` | 32 bytes |
-| Struct with 2x u64 | 64 bytes |
+| Encrypted Type | Scalar Count | Total Size | ArgBuilder Calls |
+|----------------|--------------|------------|------------------|
+| `bool`, `u8` | 1 | 32 bytes | 1x `.encrypted_u8([u8; 32])` |
+| `u16`, `u32` | 1 | 32 bytes | 1x `.encrypted_u32([u8; 32])` |
+| `u64` | 1 | 32 bytes | 1x `.encrypted_u64([u8; 32])` |
+| `u128` | 1 | 32 bytes | 1x `.encrypted_u128([u8; 32])` |
+| `(u64, u64)` | 2 | 64 bytes | 2x `.encrypted_u64([u8; 32])` |
+| `{ a: u64, b: u64 }` | 2 | 64 bytes | 2x `.encrypted_u64([u8; 32])` |
+| `[u32; 5]` | 5 | 160 bytes | 5x `.encrypted_u32([u8; 32])` |
+
+**Formula**: `ciphertext_size = 32 * number_of_scalar_values`
+
+**Critical**: Each scalar requires a **separate ArgBuilder call** with a `[u8; 32]` parameter. You cannot pass a combined `[u8; 64]` array for two values.
+
+```rust
+// WRONG - combined array, single call
+pub fn add(ctx: Context<Add>, encrypted: [u8; 64], ...) -> Result<()> {
+    let args = ArgBuilder::new()
+        .encrypted_u64(encrypted)  // ERROR: expects [u8; 32]
+        .build();
+}
+
+// CORRECT - separate arrays, multiple calls
+pub fn add(ctx: Context<Add>, enc_a: [u8; 32], enc_b: [u8; 32], ...) -> Result<()> {
+    let args = ArgBuilder::new()
+        .encrypted_u64(enc_a)   // First value
+        .encrypted_u64(enc_b)   // Second value
+        .build();
+}
+```
+
+**Common mistake**: Using `[u8; 8]` for u64 (wrong) instead of `[u8; 32]` (correct).
+
+## Nonce Errors
+
+### "Decryption failed" or Garbled Output
+
+**Cause**: Nonce reuse or mismatch between encryption and decryption.
+
+**Requirements**:
+- Nonce must be **16 bytes**
+- Nonce must be **unique** per (sharedSecret, plaintext) pair
+- Same nonce must be passed to program as was used for encryption
+
+```typescript
+// WRONG: Reusing nonce for multiple encryptions
+const nonce = randomBytes(16);
+const ct1 = cipher.encrypt([value1], nonce);
+const ct2 = cipher.encrypt([value2], nonce);  // BUG: same nonce!
+
+// CORRECT: Fresh nonce for each encryption
+const nonce1 = randomBytes(16);
+const ct1 = cipher.encrypt([value1], nonce1);
+const nonce2 = randomBytes(16);
+const ct2 = cipher.encrypt([value2], nonce2);
+```
+
+**Note**: After MXE decrypts inputs, it increments the nonce by 1 before encrypting outputs. This is handled automatically.
 
 ## Localnet Issues
 
@@ -78,3 +133,169 @@ arcium localnet start
 # Or use fresh test run
 arcium test  # Auto-manages localnet
 ```
+
+## CLI Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `arcium: command not found` | CLI not installed | Run `arcup install` or add `~/.cargo/bin` to PATH |
+| `Error: Docker not running` | Docker daemon not started | Start Docker Desktop or `systemctl start docker` |
+| Build fails with circuit errors | Arcis syntax issue | Check circuit code against [Arcis Circuits](arcis-circuits.md) |
+| `anchor build` fails | Anchor/Solana version mismatch | Verify Anchor 0.32.1 and Solana CLI 2.3.0 |
+
+## Common Gotchas
+
+### Account Offset Calculation Wrong
+
+**Symptom**: Computation fails silently or returns garbage data
+**Cause**: Wrong byte offset in `.account(pubkey, offset, size)`
+**Fix**: Count ALL bytes before encrypted field:
+- Discriminator: 8 bytes (Anchor adds this automatically)
+- `bump: u8`: 1 byte
+- `Pubkey`: 32 bytes
+- `u64`: 8 bytes
+- `u128`: 16 bytes
+
+See [Account Offset Calculation](solana-program.md#account-offset-calculation-critical) for examples.
+
+### Callback Account Not Written
+
+**Symptom**: State not updated after callback completes
+**Cause**: Writability not set in BOTH places
+**Fix**: Set BOTH:
+```rust
+// 1. In CallbackAccount when queuing
+CallbackAccount::new(ctx.accounts.game_state.key(), true /* is_writable */, false)
+
+// 2. In callback accounts struct
+#[account(mut)]  // <-- This is required!
+pub game_state: Account<'info, GameState>,
+```
+
+### Circuit Hash Verification Failed
+
+**Symptom**: "Hash verification failed" error on computation
+**Cause**: Using placeholder `[0u8; 32]` instead of `circuit_hash!` for off-chain circuits
+**Fix**: Always use the macro:
+```rust
+// WRONG
+hash: [0u8; 32],
+
+// CORRECT
+hash: circuit_hash!("instruction_name"),
+```
+
+### Game State Invalid
+
+**Symptom**: "Invalid game state" or unexpected state transitions
+**Cause**: State machine transition without validation
+**Fix**: Always validate state before transitioning:
+```rust
+require!(
+    game.game_state == GameState::PlayerTurn as u8,
+    ErrorCode::InvalidGameState
+);
+```
+
+### Encrypted Output Wrong Size
+
+**Symptom**: Deserialization fails or data corrupted
+**Cause**: `LEN` parameter wrong in `SharedEncryptedStruct<LEN>` or `MXEEncryptedStruct<LEN>`
+**Fix**: Count scalar values, not bytes:
+- `u64` = 1 scalar
+- `(u64, bool)` = 2 scalars
+- `[u32; 5]` = 5 scalars
+- `{ a: u64, b: u64 }` = 2 scalars
+
+## Testing Patterns
+
+### Unit Test Circuit Logic
+
+Circuits are pure functions - test logic separately before encryption:
+
+```rust
+// In encrypted-ixs/src/lib.rs (outside #[encrypted] module)
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_bid_comparison_logic() {
+        // Test with known values - verifies algorithm before MPC
+        let current_highest = 100u64;
+        let new_bid = 150u64;
+        assert!(new_bid > current_highest);
+    }
+}
+```
+
+### Integration Test with Localnet
+
+```typescript
+describe("my_app", () => {
+  before(async () => {
+    // `arcium test` auto-starts localnet with ARX nodes
+  });
+
+  it("initializes computation definition", async () => {
+    await program.methods.initMyCompDef().rpc();
+    // Verify comp def account exists
+    const compDef = await program.account.compDef.fetch(compDefAddress);
+    expect(compDef).to.exist;
+  });
+
+  it("queues and awaits computation", async () => {
+    // Encrypt, queue, await finalization
+    await program.methods.myInstruction(...).rpc();
+    await awaitComputationFinalization(provider, offset, programId);
+    // Verify callback executed via event or state change
+  });
+});
+```
+
+### Test State Transitions
+
+```typescript
+it("rejects invalid state transition", async () => {
+  // Setup: set game state to RESOLVED
+  // Action: attempt to call player_move (should fail)
+  try {
+    await program.methods.playerMove(...).rpc();
+    assert.fail("Should have thrown InvalidGameState");
+  } catch (e) {
+    expect(e.message).to.include("InvalidGameState");
+  }
+});
+```
+
+### Debugging Failed Computations
+
+| Check | Command/Action |
+|-------|----------------|
+| ARX nodes running | `docker ps | grep arx` |
+| Computation queued | Check computation account exists |
+| Callback registered | Verify `callback_ix` in queue call |
+| Account writability | Both `CallbackAccount::new(..., true, ...)` AND `#[account(mut)]` |
+| Comp def initialized | Call `init_*_comp_def` first |
+
+### Test Encrypted State Updates
+
+```typescript
+it("updates encrypted state correctly", async () => {
+  // Initial state
+  await program.methods.initState().rpc();
+
+  // Perform encrypted operation
+  const nonce = randomBytes(16);
+  const ciphertext = cipher.encrypt([BigInt(value)], nonce);
+  await program.methods.updateState(Array.from(ciphertext[0]), ...).rpc();
+  await awaitComputationFinalization(provider, offset, programId);
+
+  // Verify state changed (may need to reveal or check side effects)
+});
+```
+
+## See Also
+
+- [Arcis Circuits](arcis-circuits.md) - Circuit syntax and constraints
+- [Solana Integration](solana-program.md) - Macro naming and account setup
+- [TypeScript Client](typescript-client.md) - Encryption patterns
+- [Mental Model](mental-model.md) - Understanding MPC constraints

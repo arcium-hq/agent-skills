@@ -154,7 +154,8 @@ impl Deck {
         for i in 0..21 {
             card_one += POWS_OF_SIXTY_FOUR[i] * array[i] as u128;
         }
-        // ... similar for card_two, card_three
+        // card_two and card_three follow same pattern (indices 21-41 and 42-51)
+        // Full implementation: github.com/arcium-hq/examples/tree/main/blackjack
         Deck { card_one, card_two, card_three }
     }
 }
@@ -190,10 +191,169 @@ pub struct MaybeValue {
     pub is_some: bool,
 }
 
-// Usage
-let maybe = MaybeValue { value: 0, is_some: false };
+// Setting a value
+let mut maybe = MaybeValue { value: 0, is_some: false };
 if condition {
     maybe.value = computed;
     maybe.is_some = true;
 }
+
+// Reading the value (check flag first)
+if maybe.is_some {
+    let val = maybe.value;  // Safe to use
+}
 ```
+
+---
+
+## 9. State Machine Pattern (Blackjack)
+
+Use enums for game state, validate transitions before processing:
+
+```rust
+// In Solana program (not circuit - enums not supported in Arcis)
+pub enum GameState {
+    Initial = 0,
+    PlayerTurn = 1,
+    DealerTurn = 2,
+    Resolving = 3,
+    Resolved = 4,
+}
+
+#[account]
+pub struct Game {
+    pub game_state: u8,  // Store as u8
+    pub encrypted_deck: [u8; 96],
+    // ...
+}
+
+// Always validate state before transition
+pub fn player_hit(ctx: Context<PlayerHit>) -> Result<()> {
+    require!(
+        ctx.accounts.game.game_state == GameState::PlayerTurn as u8,
+        ErrorCode::InvalidGameState
+    );
+    // ... queue computation
+}
+```
+
+**Source**: `examples/blackjack/programs/blackjack/src/lib.rs`
+
+---
+
+## 10. Pubkey as u128 Pair (Sealed Auction)
+
+Solana pubkeys are 32 bytes, but Arcis only supports up to u128. Split into two u128s:
+
+```rust
+// Circuit struct
+pub struct Bid {
+    pub amount: u64,
+    pub bidder_lo: u128,  // First 16 bytes of pubkey
+    pub bidder_hi: u128,  // Last 16 bytes of pubkey
+}
+```
+
+```typescript
+// Client-side splitting
+function splitPubkeyToU128s(pubkey: Uint8Array): { lo: bigint; hi: bigint } {
+    const loBytes = pubkey.slice(0, 16);
+    const hiBytes = pubkey.slice(16, 32);
+    return {
+        lo: deserializeLE(loBytes),
+        hi: deserializeLE(hiBytes)
+    };
+}
+
+// Reconstruct
+function u128sToPubkey(lo: bigint, hi: bigint): PublicKey {
+    const loBytes = serializeLE(lo, 16);
+    const hiBytes = serializeLE(hi, 16);
+    return new PublicKey(Buffer.concat([loBytes, hiBytes]));
+}
+```
+
+**Source**: `examples/sealed_bid_auction/tests/sealed_bid_auction.ts`
+
+---
+
+## 11. Multiple Nonces Pattern (Blackjack)
+
+When tracking different encrypted states for different parties:
+
+```rust
+#[account]
+pub struct Game {
+    pub deck_nonce: u128,    // For deck encryption
+    pub client_nonce: u128,  // For player hand
+    pub dealer_nonce: u128,  // For dealer hand
+}
+```
+
+Each encryption context needs its own nonce to prevent correlation attacks.
+
+**Source**: `examples/blackjack/programs/blackjack/src/lib.rs`
+
+---
+
+## 12. Combining Multiple Patterns
+
+Complex apps combine patterns. Here's a framework for architecting multi-pattern apps.
+
+### Example: Sealed-Bid Auction Architecture
+
+| Pattern | Purpose | Implementation |
+|---------|---------|----------------|
+| Persistent State (#2) | Store bids | `Enc<Mxe, AuctionState>` |
+| Multi-Party Input (#3) | Each bidder submits | Multiple `Enc<Shared, Bid>` inputs |
+| Comparisons (#5) | Find highest bid | Compare encrypted bids |
+| State Machine (#9) | Auction phases | `status: u8` with validation |
+
+### Architecture Steps
+
+1. **Define state struct** with all encrypted fields:
+   ```rust
+   pub struct AuctionState {
+       highest_bid: u64,
+       highest_bidder: u128,
+       status: u8,  // 0=open, 1=closed, 2=revealed
+   }
+   ```
+
+2. **Map out computation phases** (init -> bidding -> resolution):
+   - `init_auction`: Create `Enc<Mxe, AuctionState>` with zero values
+   - `place_bid`: Accept `Enc<Shared, Bid>`, compare, update state
+   - `close_auction`: Validate status, set to closed
+   - `reveal_winner`: `.reveal()` winner after close
+
+3. **Choose encryption context per field** ([see decision tree](../references/arcis-circuits.md#when-to-use-each-encryption-context)):
+   - Bid amounts: `Enc<Mxe, T>` (persists across bids, never revealed to clients)
+   - Final winner: `.reveal()` (public after auction ends)
+
+4. **Add state validation** before each transition (Solana program side):
+   ```rust
+   require!(auction.status == 0, ErrorCode::AuctionClosed);
+   ```
+
+5. **Plan account creation** (init) vs updates (callbacks):
+   - Init: Creates account + queues first computation
+   - Updates: Callback writes back to existing account
+
+### Common Pattern Combinations
+
+| App Type | Patterns Used |
+|----------|---------------|
+| Game (poker, blackjack) | Persistent State + Randomness + Multi-Party + State Machine |
+| DeFi (auctions, AMM) | Persistent State + Comparisons + Multi-Party |
+| Voting | Multi-Party + Aggregation + Reveal at end |
+| Identity (credit check) | Re-encryption (Sealing) + Comparisons |
+
+---
+
+**Note**: All source paths (e.g., `examples/blackjack/...`) reference the [Arcium Examples Repository](https://github.com/arcium-hq/examples).
+
+## See Also
+
+- [Mental Model](../references/mental-model.md) - Why these patterns are needed
+- [Arcis Circuits](../references/arcis-circuits.md) - Type constraints
+- [Troubleshooting](../references/troubleshooting.md) - Common pattern mistakes

@@ -45,14 +45,16 @@ pub mod adder {
     pub fn add(
         ctx: Context<Add>,
         offset: u64,
-        encrypted: [u8; 64],  // Two u64s
+        encrypted_a: [u8; 32],  // Encrypted u64 (always 32 bytes from RescueCipher)
+        encrypted_b: [u8; 32],  // Encrypted u64 (always 32 bytes from RescueCipher)
         pub_key: [u8; 32],
         nonce: u128,
     ) -> Result<()> {
         let args = ArgBuilder::new()
             .x25519_pubkey(pub_key)
             .plaintext_u128(nonce)
-            .encrypted_u64(encrypted)
+            .encrypted_u64(encrypted_a)
+            .encrypted_u64(encrypted_b)
             .build();
 
         queue_computation(
@@ -129,6 +131,16 @@ pub struct AddCallback<'info> {
     #[account(address = ::anchor_lang::solana_program::sysvar::instructions::ID)]
     pub instructions_sysvar: AccountInfo<'info>,
 }
+
+#[error_code]
+pub enum ErrorCode {
+    #[msg("Cluster not set")]
+    ClusterNotSet,
+    #[msg("Mempool not set")]
+    MempoolNotSet,
+    #[msg("Executing pool not set")]
+    ExecutingPoolNotSet,
+}
 ```
 
 ## Test (tests/adder.ts)
@@ -136,6 +148,7 @@ pub struct AddCallback<'info> {
 ```typescript
 import * as anchor from "@coral-xyz/anchor";
 import { randomBytes } from "crypto";
+import { sha256 } from "@noble/hashes/sha256";
 import {
   getMXEPublicKey, RescueCipher, x25519, deserializeLE,
   awaitComputationFinalization, getArciumEnv, getCompDefAccOffset,
@@ -151,17 +164,21 @@ describe("adder", () => {
     // Init comp def (once)
     await program.methods.initAddCompDef().rpc();
 
-    // Get MXE key with retry
-    let mxePublicKey: Uint8Array;
+    // ARX nodes may take time to initialize after MXE account creation
+    // Retry with backoff until public key is available
+    let mxePublicKey: Uint8Array | null = null;
     for (let i = 0; i < 20; i++) {
       const key = await getMXEPublicKey(provider, program.programId);
       if (key) { mxePublicKey = key; break; }
       await new Promise(r => setTimeout(r, 500));
     }
+    if (!mxePublicKey) throw new Error("Failed to get MXE public key after 20 attempts");
 
-    // Key exchange + encrypt
+    // TESTING: Ephemeral random keys
     const privateKey = x25519.utils.randomSecretKey();
     const publicKey = x25519.getPublicKey(privateKey);
+
+    // Key exchange + encrypt
     const sharedSecret = x25519.getSharedSecret(privateKey, mxePublicKey);
     const cipher = new RescueCipher(sharedSecret);
 
@@ -174,8 +191,8 @@ describe("adder", () => {
 
     // Submit computation
     await program.methods
-      .add(offset, Array.from(ciphertext.flat()), Array.from(publicKey),
-           new anchor.BN(deserializeLE(nonce).toString()))
+      .add(offset, Array.from(ciphertext[0]), Array.from(ciphertext[1]),
+           Array.from(publicKey), new anchor.BN(deserializeLE(nonce).toString()))
       .accountsPartial({
         computationAccount: getComputationAccAddress(
           getArciumEnv().arciumClusterOffset, offset),
@@ -193,4 +210,27 @@ describe("adder", () => {
     // Result: 42
   });
 });
+```
+
+## Production Key Derivation
+
+For production apps, derive deterministic keys from wallet signatures:
+
+```typescript
+// PRODUCTION: Derive keys from wallet signature (recoverable)
+async function deriveEncryptionKeys(
+  wallet: { signMessage: (msg: Uint8Array) => Promise<Uint8Array> },
+  programId: PublicKey
+): Promise<{ privateKey: Uint8Array; publicKey: Uint8Array }> {
+  const message = `Arcium encryption key for ${programId.toBase58()}`;
+  const signature = await wallet.signMessage(new TextEncoder().encode(message));
+  const privateKey = sha256(signature).slice(0, 32);
+  const publicKey = x25519.getPublicKey(privateKey);
+  return { privateKey, publicKey };
+}
+
+// Usage
+const { privateKey, publicKey } = await deriveEncryptionKeys(wallet, program.programId);
+const sharedSecret = x25519.getSharedSecret(privateKey, mxePublicKey);
+const cipher = new RescueCipher(sharedSecret);
 ```
