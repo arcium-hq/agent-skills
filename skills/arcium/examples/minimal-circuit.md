@@ -1,0 +1,196 @@
+# Minimal Arcium App
+
+Complete example: encrypted sum of two numbers.
+
+## Circuit (encrypted-ixs/src/lib.rs)
+
+```rust
+use arcis::*;
+
+#[encrypted]
+mod circuits {
+    use arcis::*;
+
+    pub struct TwoNumbers {
+        pub a: u64,
+        pub b: u64,
+    }
+
+    #[instruction]
+    pub fn add(input: Enc<Shared, TwoNumbers>) -> u64 {
+        let nums = input.to_arcis();
+        (nums.a + nums.b).reveal()
+    }
+}
+```
+
+## Program (programs/adder/src/lib.rs)
+
+```rust
+use anchor_lang::prelude::*;
+use arcium_anchor::prelude::*;
+
+const COMP_DEF_OFFSET_ADD: u32 = comp_def_offset("add");
+
+declare_id!("...");
+
+#[arcium_program]
+pub mod adder {
+    use super::*;
+
+    pub fn init_add_comp_def(ctx: Context<InitAddCompDef>) -> Result<()> {
+        init_comp_def(ctx.accounts, None, None)
+    }
+
+    pub fn add(
+        ctx: Context<Add>,
+        offset: u64,
+        encrypted: [u8; 64],  // Two u64s
+        pub_key: [u8; 32],
+        nonce: u128,
+    ) -> Result<()> {
+        let args = ArgBuilder::new()
+            .x25519_pubkey(pub_key)
+            .plaintext_u128(nonce)
+            .encrypted_u64(encrypted)
+            .build();
+
+        queue_computation(
+            ctx.accounts, offset, args, None,
+            vec![AddCallback::callback_ix(offset, &ctx.accounts.mxe_account, &[])?],
+            1, 0,
+        )
+    }
+
+    #[arcium_callback(encrypted_ix = "add")]
+    pub fn add_callback(
+        ctx: Context<AddCallback>,
+        output: SignedComputationOutputs<AddOutput>,
+    ) -> Result<()> {
+        let result = output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        )?;
+        emit!(AddEvent { sum: result.field_0 });
+        Ok(())
+    }
+}
+
+#[event]
+pub struct AddEvent {
+    pub sum: u64,
+}
+
+#[init_computation_definition_accounts("add", payer)]
+#[derive(Accounts)]
+pub struct InitAddCompDef<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    pub comp_def_account: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
+}
+
+#[queue_computation_accounts("add", payer)]
+#[derive(Accounts)]
+pub struct Add<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account, ErrorCode::MempoolNotSet))]
+    pub mempool_account: Box<Account<'info, Mempool>>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account, ErrorCode::ExecutingPoolNotSet))]
+    pub executing_pool: Box<Account<'info, ExecutingPool>>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_ADD))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(mut)]
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account, ErrorCode::ClusterNotSet))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
+}
+
+#[callback_accounts("add")]
+#[derive(Accounts)]
+pub struct AddCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_ADD))]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Account<'info, MXEAccount>,
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account, ErrorCode::ClusterNotSet))]
+    pub cluster_account: Account<'info, Cluster>,
+    #[account(address = ::anchor_lang::solana_program::sysvar::instructions::ID)]
+    pub instructions_sysvar: AccountInfo<'info>,
+}
+```
+
+## Test (tests/adder.ts)
+
+```typescript
+import * as anchor from "@coral-xyz/anchor";
+import { randomBytes } from "crypto";
+import {
+  getMXEPublicKey, RescueCipher, x25519, deserializeLE,
+  awaitComputationFinalization, getArciumEnv, getCompDefAccOffset,
+  getMXEAccAddress, getMempoolAccAddress, getCompDefAccAddress,
+  getExecutingPoolAccAddress, getComputationAccAddress, getClusterAccAddress,
+} from "@arcium-hq/client";
+
+describe("adder", () => {
+  const provider = anchor.AnchorProvider.env();
+  const program = anchor.workspace.Adder;
+
+  it("adds two encrypted numbers", async () => {
+    // Init comp def (once)
+    await program.methods.initAddCompDef().rpc();
+
+    // Get MXE key with retry
+    let mxePublicKey: Uint8Array;
+    for (let i = 0; i < 20; i++) {
+      const key = await getMXEPublicKey(provider, program.programId);
+      if (key) { mxePublicKey = key; break; }
+      await new Promise(r => setTimeout(r, 500));
+    }
+
+    // Key exchange + encrypt
+    const privateKey = x25519.utils.randomSecretKey();
+    const publicKey = x25519.getPublicKey(privateKey);
+    const sharedSecret = x25519.getSharedSecret(privateKey, mxePublicKey);
+    const cipher = new RescueCipher(sharedSecret);
+
+    const a = BigInt(10);
+    const b = BigInt(32);
+    const nonce = randomBytes(16);
+    const ciphertext = cipher.encrypt([a, b], nonce);
+
+    const offset = new anchor.BN(randomBytes(8), "hex");
+
+    // Submit computation
+    await program.methods
+      .add(offset, Array.from(ciphertext.flat()), Array.from(publicKey),
+           new anchor.BN(deserializeLE(nonce).toString()))
+      .accountsPartial({
+        computationAccount: getComputationAccAddress(
+          getArciumEnv().arciumClusterOffset, offset),
+        clusterAccount: getClusterAccAddress(getArciumEnv().arciumClusterOffset),
+        mxeAccount: getMXEAccAddress(program.programId),
+        mempoolAccount: getMempoolAccAddress(getArciumEnv().arciumClusterOffset),
+        executingPool: getExecutingPoolAccAddress(getArciumEnv().arciumClusterOffset),
+        compDefAccount: getCompDefAccAddress(program.programId,
+          Buffer.from(getCompDefAccOffset("add")).readUInt32LE()),
+      })
+      .rpc({ skipPreflight: true, commitment: "confirmed" });
+
+    // Await result
+    await awaitComputationFinalization(provider, offset, program.programId);
+    // Result: 42
+  });
+});
+```
