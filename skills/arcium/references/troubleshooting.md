@@ -1,5 +1,7 @@
 # Troubleshooting
 
+> Hard-to-debug errors and solutions. For API reference, use MCP.
+
 ## Common Errors
 
 | Error | Cause | Solution |
@@ -140,7 +142,7 @@ arcium test  # Auto-manages localnet
 |-------|-------|----------|
 | `arcium: command not found` | CLI not installed | Run `arcup install` or add `~/.cargo/bin` to PATH |
 | `Error: Docker not running` | Docker daemon not started | Start Docker Desktop or `systemctl start docker` |
-| Build fails with circuit errors | Arcis syntax issue | Check circuit code against [Arcis Circuits](arcis-circuits.md) |
+| Build fails with circuit errors | Arcis syntax issue | MCP: search "arcis syntax" for circuit reference |
 | `anchor build` fails | Anchor/Solana version mismatch | Verify Anchor 0.32.1 and Solana CLI 2.3.0 |
 
 ## Common Gotchas
@@ -155,8 +157,6 @@ arcium test  # Auto-manages localnet
 - `Pubkey`: 32 bytes
 - `u64`: 8 bytes
 - `u128`: 16 bytes
-
-See [Account Offset Calculation](solana-program.md#account-offset-calculation-critical) for examples.
 
 ### Callback Account Not Written
 
@@ -295,7 +295,7 @@ it("updates encrypted state correctly", async () => {
 
 ## See Also
 
-- [Arcis Circuits](arcis-circuits.md) - Circuit syntax and constraints
-- [Solana Integration](solana-program.md) - Macro naming and account setup
-- [TypeScript Client](typescript-client.md) - Encryption patterns
-- [Mental Model](mental-model.md) - Understanding MPC constraints
+- [Patterns](../examples/patterns.md) - Working code examples
+- MCP: "arcis encrypted instruction" for circuit syntax
+- MCP: "arcium_callback queue_computation" for program macros
+- MCP: "RescueCipher encrypt" for client encryption
