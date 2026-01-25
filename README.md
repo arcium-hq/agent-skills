@@ -1,36 +1,71 @@
 # Arcium Skills
 
-Skills for building privacy-preserving Solana apps with Arcium MPC.
+Skills for building confidential applications on Solana with Arcium.
 
-## Install
-
-```bash
-npx add-skill arcium-hq/skills
-```
-
-Or install specific skill:
-
-```bash
-npx add-skill arcium-hq/skills --skill arcium
-```
+Skills follow the [Agent Skills](https://agentskills.io) format.
 
 ## Available Skills
 
 ### arcium
 
-Build Arcium MPC applications with Arcis circuits, Anchor programs, and TypeScript clients.
+Build privacy-preserving applications on Solana—compute on encrypted data without revealing inputs. Works with Anchor programs using Arcium's confidential computing layer.
 
 **Use when:**
-- Writing Arcis circuits (`#[encrypted]`, `#[instruction]`)
-- Integrating with Anchor programs (`queue_computation`, callbacks)
-- Encrypting client inputs (`@arcium-hq/client`)
+- Computing on data that must stay private (voting, auctions, hidden game state)
+- Multiple parties need to combine data without revealing individual inputs
+- On-chain state must remain encrypted but still computable
 
 **Covers:**
-- MPC mental model and constraints
-- Circuit development patterns
-- Solana program integration
-- TypeScript client SDK
-- Common patterns (stateless, stateful, multi-party, randomness)
+- Arcium patterns via [MCP documentation search](https://docs.arcium.com/mcp)
+- Circuit development (`#[encrypted]`, `#[instruction]`)
+- Anchor integration (`queue_computation`, callbacks)
+- Client SDK (`@arcium-hq/client`)
+- Common patterns: stateless, stateful, multi-party, randomness
+- Troubleshooting for hard-to-debug errors
+
+## Installation
+
+### Using skills CLI
+
+```bash
+npx skills add arcium-hq/skills
+```
+
+### Using amp
+
+[Amp](https://ampcode.com) users:
+
+```bash
+amp skill add arcium-hq/skills
+```
+
+### Manual installation
+
+```bash
+git clone https://github.com/arcium-hq/skills.git
+cp -r skills/skills/arcium <your-skills-directory>/
+```
+
+See [skills.sh/docs](https://skills.sh/docs) for agent-specific installation paths.
+
+## Usage
+
+Skills are automatically available once installed. The agent will use them when relevant tasks are detected.
+
+**Example prompts:**
+
+- "How do I encrypt voting data with Arcium?"
+- "Show me the queue_computation callback pattern"
+- "Search Arcium docs for RescueCipher encryption"
+
+## Skill Structure
+
+Each skill contains:
+
+- `SKILL.md` - Instructions for the agent
+- `mcp.json` - MCP server configuration (optional)
+- `examples/` - Curated code patterns
+- `references/` - Troubleshooting and deep dives
 
 ## Resources
 
