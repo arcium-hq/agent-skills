@@ -1,5 +1,8 @@
 # Common Patterns
 
+> Curated examples from [arcium-hq/examples](https://github.com/arcium-hq/examples).
+> Not exhaustive - use MCP: "arcium examples" for more patterns.
+
 ## 1. Stateless Computation (Coinflip)
 
 No persistent state. Input -> Compute -> Reveal.
@@ -87,12 +90,19 @@ Cryptographically secure randomness via `ArcisRNG`.
 
 ```rust
 #[instruction]
-pub fn shuffle_and_deal_cards(mxe: Mxe, client: Shared) -> (...) {
+pub fn shuffle_and_deal_cards(
+    mxe: Mxe, mxe_again: Mxe, client: Shared, client_again: Shared
+) -> (Enc<Mxe, Deck>, Enc<Mxe, Hand>, Enc<Shared, Hand>, Enc<Shared, u8>) {
     let mut deck = INITIAL_DECK;
     ArcisRNG::shuffle(&mut deck);
-
-    // Deal cards...
-    mxe.from_arcis(Deck::from_array(deck))
+    let (dealer_hand, player_hand, visible_card) = deal_cards(&deck);
+    // Multiple Mxe/Shared params needed for multiple encrypted outputs
+    (
+        mxe.from_arcis(Deck::from_array(deck)),
+        mxe_again.from_arcis(dealer_hand),
+        client.from_arcis(player_hand),
+        client_again.from_arcis(visible_card),
+    )
 }
 ```
 
@@ -326,7 +336,7 @@ Complex apps combine patterns. Here's a framework for architecting multi-pattern
    - `close_auction`: Validate status, set to closed
    - `reveal_winner`: `.reveal()` winner after close
 
-3. **Choose encryption context per field** ([see decision tree](../references/arcis-circuits.md#when-to-use-each-encryption-context)):
+3. **Choose encryption context per field** (MCP: search "Enc Shared Mxe types"):
    - Bid amounts: `Enc<Mxe, T>` (persists across bids, never revealed to clients)
    - Final winner: `.reveal()` (public after auction ends)
 
@@ -354,6 +364,6 @@ Complex apps combine patterns. Here's a framework for architecting multi-pattern
 
 ## See Also
 
-- [Mental Model](../references/mental-model.md) - Why these patterns are needed
-- [Arcis Circuits](../references/arcis-circuits.md) - Type constraints
 - [Troubleshooting](../references/troubleshooting.md) - Common pattern mistakes
+- MCP: "arcis types" for type constraints
+- MCP: "arcium examples" for more patterns
