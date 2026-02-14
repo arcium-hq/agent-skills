@@ -28,7 +28,7 @@ Build privacy-preserving applications on Solana—compute on encrypted data with
 ### Using skills CLI
 
 ```bash
-npx skills add arcium-hq/skills
+npx skills add arcium-hq/agent-skills
 ```
 
 ### Using amp
@@ -36,17 +36,27 @@ npx skills add arcium-hq/skills
 [Amp](https://ampcode.com) users:
 
 ```bash
-amp skill add arcium-hq/skills
+amp skill add arcium-hq/agent-skills
 ```
 
 ### Manual installation
 
 ```bash
-git clone https://github.com/arcium-hq/skills.git
-cp -r skills/skills/arcium <your-skills-directory>/
+git clone https://github.com/arcium-hq/agent-skills.git
+cp -r agent-skills/skills/arcium <your-skills-directory>/
 ```
 
 See [skills.sh/docs](https://skills.sh/docs) for agent-specific installation paths.
+
+## MCP (recommended)
+
+The skill references [Arcium's docs MCP server](https://docs.arcium.com/mcp) for live API search. Add it to your agent:
+
+| Agent | Setup |
+|-------|-------|
+| Claude Code | `claude mcp add --transport http arcium-docs https://docs.arcium.com/mcp` |
+| Cursor | Add to `.cursor/mcp.json`: `{"mcpServers": {"arcium-docs": {"url": "https://docs.arcium.com/mcp"}}}` |
+| VS Code | Add to `.vscode/mcp.json`: `{"servers": {"arcium-docs": {"type": "http", "url": "https://docs.arcium.com/mcp"}}}` |
 
 ## Usage
 
@@ -63,7 +73,6 @@ Skills are automatically available once installed. The agent will use them when 
 Each skill contains:
 
 - `SKILL.md` - Instructions for the agent
-- `mcp.json` - MCP server configuration (optional)
 - `examples/` - Curated code patterns
 - `references/` - Troubleshooting and deep dives
 

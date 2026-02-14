@@ -14,6 +14,13 @@
 | "Invalid cluster" | Wrong network | Verify cluster offset |
 | "Decryption failed" / garbled output | Nonce reuse or mismatch | Use unique nonce per encryption |
 | Ciphertext size mismatch | Wrong array size | Each value = 32 bytes (see table below) |
+| Garbage result from division | Secret divisor was zero (UB in MPC) | Guard with `if divisor != 0` pattern |
+| Callback transaction too large | Output exceeds ~1232 bytes | Reduce output fields, use EncData/Pack, or split computation |
+| `.filter()` compile error | Variable-length output unsupported | Manual loop with fixed-size array + count |
+| `<<` compile error | Left shift unsupported in Arcis | Multiply by powers of 2 |
+| Float result wrong/clamped | Computed value outside `[-2^75, 2^75)` | Validate range or use integers |
+| Enum in circuit fails | Enums unsupported in Arcis | `u8` constants + validation |
+| Recursion compile error | Fixed circuit structure required | Iterative loop with fixed bounds |
 
 ## MXE Public Key is Null
 
@@ -61,6 +68,27 @@ const compDefAccount = getCompDefAccAddress(
 // Program uses same offset
 const COMP_DEF_OFFSET_FLIP: u32 = comp_def_offset("flip");
 ```
+
+## ArgBuilder Ordering Errors
+
+### Symptom: Computation fails, as nodes aren't able to use data
+
+ArgBuilder calls must match circuit fn parameter order left-to-right, with correct prefixes:
+
+**For each `Enc<Shared, T>` parameter:**
+1. `.x25519_pubkey(pub_key)`
+2. `.plaintext_u128(nonce)`
+3. `.encrypted_<type>(ct)` for each scalar in T
+
+**For each `Enc<Mxe, T>` parameter:**
+1. `.plaintext_u128(nonce)`
+2. `.encrypted_<type>(ct)` for each scalar in T
+
+**Common mistakes:**
+- Forgetting `.x25519_pubkey()` for Shared params -- silent failure, most common bug
+- Wrong parameter order -- must match circuit fn signature left-to-right
+- Using wrong `encrypted_<type>` method (e.g., `encrypted_u64` for a u8 field)
+- Passing combined `[u8; 64]` instead of two separate `[u8; 32]` calls (existing gotcha)
 
 ## Ciphertext Size Mismatch
 

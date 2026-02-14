@@ -1,6 +1,11 @@
 ---
 name: arcium
 description: Build encrypted computation apps on Solana with Arcium MPC. Use when writing Arcis circuits, Anchor programs with queue_computation, or encrypting client inputs with @arcium-hq/client.
+license: MIT
+compatibility: Requires Arcium MCP server for full functionality. See README.
+metadata:
+  author: arcium-hq
+  version: "1.0"
 ---
 
 # Arcium
@@ -73,6 +78,7 @@ pub fn flip_callback(ctx: Context<FlipCallback>,
 | Account macros | "queue_computation_accounts callback_accounts" |
 | Deployment | "arcium deploy cluster-offset devnet" |
 | Version requirements | "arcium installation anchor solana" |
+| Output size / payload reduction | "EncData Pack callback payload" |
 
 ## Encryption Size
 
@@ -82,6 +88,19 @@ RescueCipher encrypts ANY value to 32 bytes:
 - bool -> 32 bytes
 
 This affects account sizing when storing encrypted data.
+
+## Arcis Standard Library
+
+Beyond basic types and arithmetic:
+- **Generics**: type params, trait bounds, associated types (no recursion/dyn)
+- **Crypto**: SHA3_256/512, Ed25519 (SecretKey, VerifyingKey, MXESigningKey)
+- **RNG**: `ArcisRNG::bool()`, `gen_integer_from_width()`, `gen_public_integer_from_width()`, `shuffle()`, `gen_integer_in_range()`
+- **ML**: LogisticRegression, LinearRegression, `ArcisMath::sigmoid()`
+- **Packing**: `Pack<T>` for efficient onchain storage
+- **Keys**: SolanaPublicKey, ArcisX25519Pubkey
+- **Debug**: `println!()`, `debug_assert!()`, `arcis_static_panic!()`
+
+MCP: search any of the above for full API.
 
 ## CLI Quick Reference
 
@@ -99,6 +118,7 @@ All macro strings must exactly match `#[instruction] fn NAME`:
 ```rust
 #[arcium_callback(encrypted_ix = "flip")]  // Must match fn flip in circuit
 comp_def_offset("flip")                    // Same name
+#[init_computation_definition_accounts("flip", payer)]
 #[queue_computation_accounts("flip", payer)]
 #[callback_accounts("flip")]
 ```
@@ -110,11 +130,16 @@ Circuit `fn add_together` generates `AddTogetherOutput`. Tuple returns use `fiel
 `SignedComputationOutputs` includes the nonce directly - no manual N+1 calculation needed.
 
 ### Early Exit Pattern
-No `break`/`continue` allowed. Use done flag:
+No `break`/`continue`/`return`/`match`/`if let` in circuits. Use done flag:
 ```rust
 let mut done = false;
 for i in 0..MAX { if !done && condition { done = true; result = i; } }
 ```
+
+### Unsupported in Circuits
+`.filter()`, `.find()`, `.any()`, `.all()` (variable-length/early-exit). Use manual loop.
+`<<` unsupported. `>>` only with compile-time known shift.
+Enums, recursion, `..` rest pattern all unsupported.
 
 ### Fixed-Size Workarounds
 - `([T; MAX], usize)` - array with length counter
@@ -125,6 +150,30 @@ for i in 0..MAX { if !done && condition { done = true; result = i; } }
 - Batch `.from_arcis()` calls to minimize conversions
 - Prefer arithmetic over comparisons (cheaper in MPC)
 - Use `u64` over `u128` when possible (fewer bits = faster)
+- Secret-dependent indexing (`arr[secret_idx]`) is O(n) -- all positions checked to hide access pattern
+
+### Output Size Limit
+Circuit outputs must fit in a single Solana callback tx (~1232 bytes).
+Each encrypted scalar = 32 bytes. Plan accordingly or split into multiple computations.
+- `EncData<T>`: ciphertext only (no key/nonce). Extract via `observer.from_arcis(result).data`. Saves ~48 bytes per output.
+- `Pack<T>`: ~26x compression for byte arrays. `Pack::new(data)` / `.unpack()`.
+
+### Division by Secret Zero
+Dividing by a secret value that is zero = undefined behavior (garbage result, no error).
+Unlike normal Rust which panics, MPC silently produces wrong output.
+Guard: `let safe_d = if d != 0 { d } else { 1 }; let r = if d != 0 { n / safe_d } else { 0 };`
+
+### Float Limitations
+`f64`/`f32` = fixed-point (52 fractional bits), NOT IEEE 754.
+Range: `[-2^75, 2^75)`. Literals outside range -> compile error. Computed values outside range -> **silently clamped**.
+
+### ArgBuilder: Shared vs Mxe
+`Enc<Shared, T>` needs `.x25519_pubkey()` + `.plaintext_u128(nonce)` before ciphertexts.
+`Enc<Mxe, T>` needs only `.plaintext_u128(nonce)` before ciphertexts.
+Omitting x25519_pubkey = silent failure. See [troubleshooting](references/troubleshooting.md#argbuilder-ordering-errors).
+
+### Callback Account Constraints
+Accounts cannot be created or resized during callbacks. Initialize in the queue function (`init_if_needed`), update in callback (`#[account(mut)]`). Mark writable in BOTH `CallbackAccount::new(..., true, ...)` AND `#[account(mut)]`.
 
 ## Project Structure
 

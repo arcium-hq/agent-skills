@@ -16,7 +16,7 @@ pub fn flip(input: Enc<Shared, UserChoice>) -> bool {
 }
 ```
 
-**Source**: `examples/coinflip/encrypted-ixs/src/lib.rs`
+**Source**: [`coinflip/encrypted-ixs/src/lib.rs`](https://github.com/arcium-hq/examples/blob/main/coinflip/encrypted-ixs/src/lib.rs)
 
 ---
 
@@ -50,7 +50,7 @@ pub fn reveal_result(stats: Enc<Mxe, VoteStats>) -> bool {
 }
 ```
 
-**Source**: `examples/voting/encrypted-ixs/src/lib.rs`
+**Source**: [`voting/encrypted-ixs/src/lib.rs`](https://github.com/arcium-hq/examples/blob/main/voting/encrypted-ixs/src/lib.rs)
 
 ---
 
@@ -80,98 +80,114 @@ pub fn player_move(
 }
 ```
 
-**Source**: `examples/rock_paper_scissors/against-player/encrypted-ixs/src/lib.rs`
+**Source**: [`rock_paper_scissors/against-player/encrypted-ixs/src/lib.rs`](https://github.com/arcium-hq/examples/blob/main/rock_paper_scissors/against-player/encrypted-ixs/src/lib.rs)
 
 ---
 
 ## 4. Randomness (Blackjack)
 
-Cryptographically secure randomness via `ArcisRNG`.
+Cryptographically secure randomness via `ArcisRNG`. Uses `Pack<T>` for efficient array storage.
 
 ```rust
+type Deck = Pack<[u8; 52]>;
+type Hand = Pack<[u8; 11]>;
+
 #[instruction]
 pub fn shuffle_and_deal_cards(
     mxe: Mxe, mxe_again: Mxe, client: Shared, client_again: Shared
 ) -> (Enc<Mxe, Deck>, Enc<Mxe, Hand>, Enc<Shared, Hand>, Enc<Shared, u8>) {
-    let mut deck = INITIAL_DECK;
-    ArcisRNG::shuffle(&mut deck);
-    let (dealer_hand, player_hand, visible_card) = deal_cards(&deck);
+    let mut initial_deck: [u8; 52] = INITIAL_DECK;
+    ArcisRNG::shuffle(&mut initial_deck);
+
+    let deck = mxe.from_arcis(Pack::new(initial_deck));
+
+    let mut dealer_cards = [53u8; 11];
+    dealer_cards[0] = initial_deck[1];
+    dealer_cards[1] = initial_deck[3];
+    let dealer_hand = mxe_again.from_arcis(Pack::new(dealer_cards));
+
+    let mut player_cards = [53u8; 11];
+    player_cards[0] = initial_deck[0];
+    player_cards[1] = initial_deck[2];
+    let player_hand = client.from_arcis(Pack::new(player_cards));
+
     // Multiple Mxe/Shared params needed for multiple encrypted outputs
-    (
-        mxe.from_arcis(Deck::from_array(deck)),
-        mxe_again.from_arcis(dealer_hand),
-        client.from_arcis(player_hand),
-        client_again.from_arcis(visible_card),
-    )
+    (deck, dealer_hand, player_hand, client_again.from_arcis(initial_deck[1]))
 }
 ```
 
-**Source**: `examples/blackjack/encrypted-ixs/src/lib.rs`
+**Source**: [`blackjack/encrypted-ixs/src/lib.rs`](https://github.com/arcium-hq/examples/blob/main/blackjack/encrypted-ixs/src/lib.rs)
 
 ---
 
 ## 5. Complex Comparison (Sealed-Bid Auction)
 
-Track highest/second-highest with encrypted comparisons.
+Track highest/second-highest with encrypted comparisons. Uses `SerializedSolanaPublicKey` for bidder identity.
 
 ```rust
+pub struct Bid {
+    pub bidder: SerializedSolanaPublicKey,
+    pub amount: u64,
+}
+
 pub struct AuctionState {
-    highest_bid: u64,
-    highest_bidder_lo: u128,
-    highest_bidder_hi: u128,
-    second_highest_bid: u64,
+    pub highest_bid: u64,
+    pub highest_bidder: SerializedSolanaPublicKey,
+    pub second_highest_bid: u64,
+    pub bid_count: u8,
 }
 
 #[instruction]
 pub fn place_bid(
-    bid: Enc<Shared, Bid>,
-    state: Enc<Mxe, AuctionState>,
+    bid_ctxt: Enc<Shared, Bid>,
+    state_ctxt: Enc<Mxe, AuctionState>,
 ) -> Enc<Mxe, AuctionState> {
-    let b = bid.to_arcis();
-    let mut s = state.to_arcis();
+    let bid = bid_ctxt.to_arcis();
+    let mut state = state_ctxt.to_arcis();
 
-    if b.amount > s.highest_bid {
-        s.second_highest_bid = s.highest_bid;
-        s.highest_bid = b.amount;
-        s.highest_bidder_lo = b.bidder_lo;
-        s.highest_bidder_hi = b.bidder_hi;
-    } else if b.amount > s.second_highest_bid {
-        s.second_highest_bid = b.amount;
+    if bid.amount > state.highest_bid {
+        state.second_highest_bid = state.highest_bid;
+        state.highest_bid = bid.amount;
+        state.highest_bidder = bid.bidder;
+    } else if bid.amount > state.second_highest_bid {
+        state.second_highest_bid = bid.amount;
     }
 
-    state.owner.from_arcis(s)
+    state.bid_count += 1;
+    state_ctxt.owner.from_arcis(state)
 }
 ```
 
-**Source**: `examples/sealed_bid_auction/encrypted-ixs/src/lib.rs`
+**Source**: [`sealed_bid_auction/encrypted-ixs/src/lib.rs`](https://github.com/arcium-hq/examples/blob/main/sealed_bid_auction/encrypted-ixs/src/lib.rs)
 
 ---
 
-## 6. Efficient Packing (Blackjack Deck)
+## 6. Efficient Packing (Pack\<T\>)
 
-Pack 52 cards into 3 u128s for efficient on-chain storage.
+`Pack<T>` bit-packs arrays/structs into fewer field elements for onchain storage (~26x compression for byte arrays).
 
 ```rust
-pub struct Deck {
-    pub card_one: u128,   // Cards 0-20 (21 cards x 6 bits)
-    pub card_two: u128,   // Cards 21-41
-    pub card_three: u128, // Cards 42-51
-}
+// Circuit: define a type alias, pack with Pack::new(), unpack with .unpack()
+type Deck = Pack<[u8; 52]>;
+type Hand = Pack<[u8; 11]>;
 
-impl Deck {
-    pub fn from_array(array: [u8; 52]) -> Deck {
-        let mut card_one = 0u128;
-        for i in 0..21 {
-            card_one += POWS_OF_SIXTY_FOUR[i] * array[i] as u128;
-        }
-        // card_two and card_three follow same pattern (indices 21-41 and 42-51)
-        // Full implementation: github.com/arcium-hq/examples/tree/main/blackjack
-        Deck { card_one, card_two, card_three }
-    }
-}
+let deck_packed: Deck = Pack::new(initial_deck);  // [u8; 52] -> Pack<[u8; 52]>
+let deck_array: [u8; 52] = deck_packed.unpack();  // Pack<[u8; 52]> -> [u8; 52]
+
+// Works with Enc as expected
+let encrypted_deck: Enc<Mxe, Deck> = mxe.from_arcis(Pack::new(cards));
+let cards: [u8; 52] = encrypted_deck.to_arcis().unpack();
 ```
 
-**Source**: `examples/blackjack/encrypted-ixs/src/lib.rs`
+```typescript
+// Client: generated packers via Arcium compiler
+import { circuits } from './build/circuits';
+
+const packed = circuits.MyStruct.pack({ board: Array.from(boardData) });
+const ciphertext = cipher.encrypt(packed, nonce);
+```
+
+**Source**: [`blackjack/encrypted-ixs/src/lib.rs`](https://github.com/arcium-hq/examples/blob/main/blackjack/encrypted-ixs/src/lib.rs)
 
 ---
 
@@ -247,43 +263,40 @@ pub fn player_hit(ctx: Context<PlayerHit>) -> Result<()> {
 }
 ```
 
-**Source**: `examples/blackjack/programs/blackjack/src/lib.rs`
+**Source**: [`blackjack/programs/blackjack/src/lib.rs`](https://github.com/arcium-hq/examples/blob/main/blackjack/programs/blackjack/src/lib.rs)
 
 ---
 
-## 10. Pubkey as u128 Pair (Sealed Auction)
+## 10. Pubkey Handling (SerializedSolanaPublicKey)
 
-Solana pubkeys are 32 bytes, but Arcis only supports up to u128. Split into two u128s:
+Use `SerializedSolanaPublicKey` for Solana pubkeys in circuits. Internally stored as `{ lo: u128, hi: u128 }`.
 
 ```rust
 // Circuit struct
 pub struct Bid {
+    pub bidder: SerializedSolanaPublicKey,
     pub amount: u64,
-    pub bidder_lo: u128,  // First 16 bytes of pubkey
-    pub bidder_hi: u128,  // Last 16 bytes of pubkey
 }
+
+// Initialize with zero
+let empty = SerializedSolanaPublicKey { lo: 0, hi: 0 };
+
+// Assign directly from another SerializedSolanaPublicKey
+state.highest_bidder = bid.bidder;
+
+// Convert to SolanaPublicKey for comparison/operations
+let pk = SolanaPublicKey::from_serialized(bid.bidder);
 ```
 
 ```typescript
-// Client-side splitting
-function splitPubkeyToU128s(pubkey: Uint8Array): { lo: bigint; hi: bigint } {
-    const loBytes = pubkey.slice(0, 16);
-    const hiBytes = pubkey.slice(16, 32);
-    return {
-        lo: deserializeLE(loBytes),
-        hi: deserializeLE(hiBytes)
-    };
-}
-
-// Reconstruct
-function u128sToPubkey(lo: bigint, hi: bigint): PublicKey {
-    const loBytes = serializeLE(lo, 16);
-    const hiBytes = serializeLE(hi, 16);
-    return new PublicKey(Buffer.concat([loBytes, hiBytes]));
-}
+// Client-side: encrypt pubkey as two u128 values (lo, hi)
+const pubkeyBytes = bidder.toBytes(); // Uint8Array[32]
+const lo = deserializeLE(pubkeyBytes.slice(0, 16));
+const hi = deserializeLE(pubkeyBytes.slice(16, 32));
+const ciphertext = cipher.encrypt([lo, hi, amount], nonce);
 ```
 
-**Source**: `examples/sealed_bid_auction/tests/sealed_bid_auction.ts`
+**Source**: [`sealed_bid_auction/encrypted-ixs/src/lib.rs`](https://github.com/arcium-hq/examples/blob/main/sealed_bid_auction/encrypted-ixs/src/lib.rs)
 
 ---
 
@@ -302,7 +315,7 @@ pub struct Game {
 
 Each encryption context needs its own nonce to prevent correlation attacks.
 
-**Source**: `examples/blackjack/programs/blackjack/src/lib.rs`
+**Source**: [`blackjack/programs/blackjack/src/lib.rs`](https://github.com/arcium-hq/examples/blob/main/blackjack/programs/blackjack/src/lib.rs)
 
 ---
 
@@ -325,7 +338,7 @@ Complex apps combine patterns. Here's a framework for architecting multi-pattern
    ```rust
    pub struct AuctionState {
        highest_bid: u64,
-       highest_bidder: u128,
+       highest_bidder: SerializedSolanaPublicKey,
        status: u8,  // 0=open, 1=closed, 2=revealed
    }
    ```
@@ -360,7 +373,65 @@ Complex apps combine patterns. Here's a framework for architecting multi-pattern
 
 ---
 
-**Note**: All source paths (e.g., `examples/blackjack/...`) reference the [Arcium Examples Repository](https://github.com/arcium-hq/examples).
+## 13. Safe Division (Guard Against Secret Zero)
+
+In MPC, division by a secret value that is zero = **undefined behavior** (garbage, no error).
+Both branches of if/else always execute, so the division runs regardless of the guard.
+Use a safe divisor to ensure the division never actually divides by zero:
+
+```rust
+let is_valid = divisor != 0;
+let safe_divisor = if is_valid { divisor } else { 1 };
+let result = if is_valid { numerator / safe_divisor } else { 0 };
+// Both branches execute. safe_divisor ensures division never hits zero.
+```
+
+---
+
+## 14. EncData for Smaller Callbacks
+
+Return `EncData<T>` instead of `Enc<Owner, T>` when hitting the 1232-byte callback limit.
+`EncData<T>` omits pubkey (32B) + nonce (16B) metadata, saving ~48 bytes per output.
+
+```rust
+#[instruction]
+pub fn compare_keys(
+    pk1: Enc<Shared, SerializedSolanaPublicKey>,
+    pk2: Enc<Shared, SerializedSolanaPublicKey>,
+    observer: Shared,
+) -> EncData<bool> {
+    let k1 = SolanaPublicKey::from_serialized(pk1.to_arcis());
+    let k2 = SolanaPublicKey::from_serialized(pk2.to_arcis());
+    observer.from_arcis(k1 == k2).data  // .data extracts EncData from Enc
+}
+```
+
+Program side receives `EncDataStruct<N>` where N = number of field elements (e.g., `EncData<bool>` -> `EncDataStruct<1>`).
+
+---
+
+## 15. Filter Alternative
+
+`.filter()` is unsupported (variable-length output). Use manual loop with fixed-size output:
+
+```rust
+#[instruction]
+fn filter_above(arr: [u8; 32], threshold: u8) -> ([u8; 32], u8) {
+    let mut result = [0u8; 32];
+    let mut count: u8 = 0;
+    for i in 0..32 {
+        if arr[i] > threshold {
+            result[count as usize] = arr[i];
+            count += 1;
+        }
+    }
+    (result, count)  // Fixed-size array + actual count
+}
+```
+
+Same approach works for `.find()`, `.any()`, `.all()` -- accumulate into fixed-size output.
+
+---
 
 ## See Also
 
