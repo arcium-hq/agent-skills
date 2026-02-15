@@ -8,7 +8,7 @@ Skills follow the [Agent Skills](https://agentskills.io) format.
 
 ### arcium
 
-Build privacy-preserving applications on Solana—compute on encrypted data without revealing inputs. Works with Anchor programs using Arcium's confidential computing layer.
+Build privacy-preserving applications on Solana -- compute on encrypted data without revealing inputs. Works with Anchor programs using Arcium's confidential computing layer.
 
 **Use when:**
 - Computing on data that must stay private (voting, auctions, hidden game state)
@@ -25,21 +25,13 @@ Build privacy-preserving applications on Solana—compute on encrypted data with
 
 ## Installation
 
-### Using skills CLI
+Install with [`skills`](https://skills.sh/docs) CLI:
 
 ```bash
 npx skills add arcium-hq/agent-skills
 ```
 
-### Using amp
-
-[Amp](https://ampcode.com) users:
-
-```bash
-amp skill add arcium-hq/agent-skills
-```
-
-### Manual installation
+Or manually:
 
 ```bash
 git clone https://github.com/arcium-hq/agent-skills.git
@@ -48,15 +40,11 @@ cp -r agent-skills/skills/arcium <your-skills-directory>/
 
 See [skills.sh/docs](https://skills.sh/docs) for agent-specific installation paths.
 
-## MCP (recommended)
+### amp
 
-The skill references [Arcium's docs MCP server](https://docs.arcium.com/mcp) for live API search. Add it to your agent:
-
-| Agent | Setup |
-|-------|-------|
-| Claude Code | `claude mcp add --transport http arcium-docs https://docs.arcium.com/mcp` |
-| Cursor | Add to `.cursor/mcp.json`: `{"mcpServers": {"arcium-docs": {"url": "https://docs.arcium.com/mcp"}}}` |
-| VS Code | Add to `.vscode/mcp.json`: `{"servers": {"arcium-docs": {"type": "http", "url": "https://docs.arcium.com/mcp"}}}` |
+```bash
+amp skill add arcium-hq/agent-skills
+```
 
 ## Usage
 
@@ -73,6 +61,7 @@ Skills are automatically available once installed. The agent will use them when 
 Each skill contains:
 
 - `SKILL.md` - Instructions for the agent
+- `mcp.json` - MCP server configuration (optional)
 - `examples/` - Curated code patterns
 - `references/` - Troubleshooting and deep dives
 

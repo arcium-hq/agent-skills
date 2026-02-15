@@ -2,7 +2,7 @@
 name: arcium
 description: Build encrypted computation apps on Solana with Arcium MPC. Use when writing Arcis circuits, Anchor programs with queue_computation, or encrypting client inputs with @arcium-hq/client.
 license: MIT
-compatibility: Requires Arcium MCP server for full functionality. See README.
+compatibility: Bundled mcp.json configures the Arcium MCP server automatically.
 metadata:
   author: arcium-hq
   version: "1.0"
