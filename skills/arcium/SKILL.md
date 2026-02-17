@@ -12,7 +12,13 @@ metadata:
 
 Encrypted computation on Solana via MPC. Data stays encrypted during computation.
 
-**Use MCP**: Search via the [Arcium MCP](https://docs.arcium.com/mcp) for detailed API docs.
+## MCP Tool
+
+| Tool | Description |
+|------|-------------|
+| `SearchArciumDocs` | Search Arcium docs for API details, examples, and guides |
+
+Query with natural language. The Decision Nudges table below has suggested searches for common topics.
 
 ## Key Concepts
 
