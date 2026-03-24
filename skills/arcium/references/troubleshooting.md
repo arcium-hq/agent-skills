@@ -2,6 +2,20 @@
 
 > Hard-to-debug errors and solutions. For API reference, use MCP.
 
+## Sections
+- Common Errors (quick-reference table)
+- MXE Public Key is Null
+- Computation Never Finalizes
+- Circuit Compilation Errors
+- Account Derivation Issues
+- ArgBuilder Ordering Errors
+- Ciphertext Size Mismatch
+- Nonce Errors
+- Localnet Issues
+- CLI Errors
+- Common Gotchas
+- Testing Patterns
+
 ## Common Errors
 
 | Error | Cause | Solution |
@@ -192,8 +206,8 @@ arcium test  # Auto-manages localnet
 **Cause**: Writability not set in BOTH places
 **Fix**: Set BOTH:
 ```rust
-// 1. In CallbackAccount when queuing
-CallbackAccount::new(ctx.accounts.game_state.key(), true /* is_writable */, false)
+// 1. In callback_ix extra_accs when queuing
+CallbackAccount { pubkey: ctx.accounts.game_state.key(), is_writable: true }
 
 // 2. In callback accounts struct
 #[account(mut)]  // <-- This is required!
@@ -301,7 +315,7 @@ it("rejects invalid state transition", async () => {
 | ARX nodes running | `docker ps | grep arx` |
 | Computation queued | Check computation account exists |
 | Callback registered | Verify `callback_ix` in queue call |
-| Account writability | Both `CallbackAccount::new(..., true, ...)` AND `#[account(mut)]` |
+| Account writability | Both `CallbackAccount { pubkey, is_writable: true }` in `callback_ix` AND `#[account(mut)]` in callback struct |
 | Comp def initialized | Call `init_*_comp_def` first |
 
 ### Test Encrypted State Updates

@@ -1,42 +1,50 @@
 ---
 name: arcium
-description: Build encrypted computation apps on Solana with Arcium MPC. Use when writing Arcis circuits, Anchor programs with queue_computation, or encrypting client inputs with @arcium-hq/client.
+description: >
+  Build privacy-preserving Solana apps with Arcium MPC. Use when writing
+  Arcis circuits, Anchor programs with queue_computation, encrypting inputs
+  with @arcium-hq/client, or debugging MPC computation failures. Covers
+  confidential DeFi, sealed-bid auctions, voting, hidden game state.
 license: MIT
 compatibility: Bundled mcp.json configures the Arcium MCP server automatically.
 metadata:
   author: arcium-hq
-  version: "1.0"
+  version: "2.0"
 ---
 
 # Arcium
 
 Encrypted computation on Solana via MPC. Data stays encrypted during computation.
 
-## MCP Tool
-
-| Tool | Description |
-|------|-------------|
-| `SearchArciumDocs` | Search Arcium docs for API details, examples, and guides |
-
-Query with natural language. The Decision Nudges table below has suggested searches for common topics.
-
-## Key Concepts
-
-- **ARX** = Arcium eXecution nodes (distributed network)
-- **MXE** = MPC Execution Environment (runtime)
-- **MPC** = Multi-Party Computation (cryptographic protocol)
+**MCP Tool**: `SearchArciumDocs` -- query with natural language for API details, examples, and guides.
 
 ## When to Use
 
 **Use when:**
+- You need trustless computation -- cryptographically guaranteed, no single party sees the data
 - Multiple parties compute on combined data without revealing inputs
 - On-chain state must remain encrypted but computable
-- Privacy: sealed-bid auctions, voting, hidden game state
+- Privacy: sealed-bid auctions, voting, hidden game state, dark pools, confidential DeFi
 
-**Don't use when:**
-- Single-party computation (use standard encryption)
-- Sub-second latency required (MPC has network overhead)
-- Complex data-dependent control flow (MPC has fixed circuit constraints)
+**Constraints:**
+- Fixed loop bounds required (no variable-length iteration)
+
+## Intent Router
+
+Identify what you're building, then read the linked reference before coding. MCP is fallback for live API details.
+
+| Intent | Read | MCP Fallback |
+|--------|------|-------------|
+| First Arcium app | [minimal-circuit.md](examples/minimal-circuit.md) | "hello world tutorial" |
+| Choose a pattern (stateless, stateful, multi-party) | [patterns.md](examples/patterns.md) | "arcium examples" |
+| Circuit syntax (`#[encrypted]`, `#[instruction]`) | [patterns.md](examples/patterns.md) | "arcis encrypted instruction" |
+| Shared vs Mxe encryption | See [Encryption Context](#encryption-context) below | "Shared vs Mxe encryption" |
+| ArgBuilder ordering / ciphertext errors | [troubleshooting.md](references/troubleshooting.md) -- ArgBuilder section | "ArgBuilder encrypted plaintext" |
+| Callback not firing / computation stuck | [troubleshooting.md](references/troubleshooting.md) -- Computation Never Finalizes | "arcium_callback queue_computation" |
+| Nonce / decryption errors | [troubleshooting.md](references/troubleshooting.md) -- Nonce Errors | "RescueCipher encrypt nonce" |
+| Client-side encryption (RescueCipher, x25519) | [minimal-circuit.md](examples/minimal-circuit.md) -- Test section | "RescueCipher encrypt nonce" |
+| Deployment (devnet/mainnet) | MCP primary | "arcium deploy cluster-offset" |
+| Version / installation requirements | MCP primary | "arcium installation anchor solana" |
 
 ## Core Pattern: Three Functions
 
@@ -57,8 +65,11 @@ pub fn init_flip_comp_def(ctx: Context<InitFlipCompDef>) -> Result<()> {
 // 2. QUEUE (each computation)
 pub fn flip(ctx: Context<Flip>, offset: u64, ...) -> Result<()> {
     let args = ArgBuilder::new()...build();
-    queue_computation(ctx.accounts, offset, args, None,
-        vec![FlipCallback::callback_ix(...)], 1, 0)
+    queue_computation(ctx.accounts, offset, args,
+        vec![FlipCallback::callback_ix(offset, &ctx.accounts.mxe_account, &[])?],
+        1, 0,
+    )?;
+    Ok(())
 }
 
 // 3. CALLBACK (after MPC completes)
@@ -70,43 +81,33 @@ pub fn flip_callback(ctx: Context<FlipCallback>,
 }
 ```
 
-## Decision Nudges
+**Encryption size**: RescueCipher encrypts any scalar to 32 bytes regardless of type.
+Formula: `ciphertext_size = 32 * number_of_scalar_values`. See [troubleshooting.md](references/troubleshooting.md) for the full size table.
 
-| Need | MCP Search |
-|------|------------|
-| Encryption types (Shared vs Mxe) | "Shared vs Mxe encryption context" |
-| ArgBuilder methods | "ArgBuilder encrypted plaintext" |
-| Circuit syntax | "arcis encrypted instruction" |
-| Client-side encryption | "RescueCipher encrypt nonce" |
-| Callback output types | "SignedComputationOutputs verify_output" |
-| Re-encryption / sealing | "re-encrypt recipient sealing" |
-| Unsupported types | "arcis unsupported Vec String" |
-| Account macros | "queue_computation_accounts callback_accounts" |
-| Deployment | "arcium deploy cluster-offset devnet" |
-| Version requirements | "arcium installation anchor solana" |
-| Output size / payload reduction | "EncData Pack callback payload" |
+## Encryption Context
 
-## Encryption Size
+| Scenario | Use |
+|----------|-----|
+| User inputs, results returned to user | `Enc<Shared, T>` |
+| Internal state users shouldn't access | `Enc<Mxe, T>` |
+| State persisted across computations | `Enc<Mxe, T>` |
+| Final reveal to all parties | `.reveal()` |
 
-RescueCipher encrypts ANY value to 32 bytes:
-- u8 -> 32 bytes
-- u128 -> 32 bytes
-- bool -> 32 bytes
+## Gotchas
 
-This affects account sizing when storing encrypted data.
+### Critical (silent failures)
+- **Macro string matching**: All macro strings must exactly match `#[instruction] fn NAME` across `#[arcium_callback]`, `comp_def_offset()`, `#[init_computation_definition_accounts]`, `#[queue_computation_accounts]`, `#[callback_accounts]`
+- **ArgBuilder ordering**: Calls must match circuit parameter order left-to-right. For `Enc<Shared, T>`: `.x25519_pubkey()` then `.plaintext_u128(nonce)` then ciphertexts. For `Enc<Mxe, T>`: `.plaintext_u128(nonce)` then ciphertexts. Missing `.x25519_pubkey()` for Shared = silent failure.
+- **Division by secret zero**: Guard divisors with the safe divisor pattern -- both branches execute in MPC, so the division always runs. See [patterns.md](examples/patterns.md) pattern #13.
 
-## Arcis Standard Library
+### Warning (wrong results)
+- **Nonce reuse**: Same nonce for multiple encryptions = garbled output. Use unique `randomBytes(16)` per encryption.
+- **Callback account writability**: Pass extra accounts via `CallbackAccount { pubkey, is_writable: true }` in `callback_ix(..., &[...])`. Also mark `#[account(mut)]` in callback struct. Accounts cannot be created or resized during callbacks.
+- **Output struct naming**: Circuit `fn add_together` generates `AddTogetherOutput`. Single returns use `field_0` directly. Tuple returns wrap in `field_0` containing a nested struct with `field_0`, `field_1`, etc.
 
-Beyond basic types and arithmetic:
-- **Generics**: type params, trait bounds, associated types (no recursion/dyn)
-- **Crypto**: SHA3_256/512, Ed25519 (SecretKey, VerifyingKey, MXESigningKey)
-- **RNG**: `ArcisRNG::bool()`, `gen_integer_from_width()`, `gen_public_integer_from_width()`, `shuffle()`, `gen_integer_in_range()`
-- **ML**: LogisticRegression, LinearRegression, `ArcisMath::sigmoid()`
-- **Packing**: `Pack<T>` for efficient onchain storage
-- **Keys**: SolanaPublicKey, ArcisX25519Pubkey
-- **Debug**: `println!()`, `debug_assert!()`, `arcis_static_panic!()`
-
-MCP: search any of the above for full API.
+### Tips
+- Prefer arithmetic over comparisons (cheaper in MPC)
+- Use `u64` over `u128` when possible (fewer bits = faster)
 
 ## CLI Quick Reference
 
@@ -117,70 +118,6 @@ arcium test                # Run with local ARX nodes
 arcium deploy --cluster-offset <n>  # See MCP: "arcium deploy" for cluster offsets
 ```
 
-## Gotchas
-
-### Macro String Matching (Critical)
-All macro strings must exactly match `#[instruction] fn NAME`:
-```rust
-#[arcium_callback(encrypted_ix = "flip")]  // Must match fn flip in circuit
-comp_def_offset("flip")                    // Same name
-#[init_computation_definition_accounts("flip", payer)]
-#[queue_computation_accounts("flip", payer)]
-#[callback_accounts("flip")]
-```
-
-### Output Struct Naming
-Circuit `fn add_together` generates `AddTogetherOutput`. Tuple returns use `field_0`, `field_1`, etc.
-
-### Callback Nonce
-`SignedComputationOutputs` includes the nonce directly - no manual N+1 calculation needed.
-
-### Early Exit Pattern
-No `break`/`continue`/`return`/`match`/`if let` in circuits. Use done flag:
-```rust
-let mut done = false;
-for i in 0..MAX { if !done && condition { done = true; result = i; } }
-```
-
-### Unsupported in Circuits
-`.filter()`, `.find()`, `.any()`, `.all()` (variable-length/early-exit). Use manual loop.
-`<<` unsupported. `>>` only with compile-time known shift.
-Enums, recursion, `..` rest pattern all unsupported.
-
-### Fixed-Size Workarounds
-- `([T; MAX], usize)` - array with length counter
-- `u8::MAX` as sentinel for "empty"
-- `{ value: T, is_some: bool }` - Option replacement
-
-### Optimization Tips
-- Batch `.from_arcis()` calls to minimize conversions
-- Prefer arithmetic over comparisons (cheaper in MPC)
-- Use `u64` over `u128` when possible (fewer bits = faster)
-- Secret-dependent indexing (`arr[secret_idx]`) is O(n) -- all positions checked to hide access pattern
-
-### Output Size Limit
-Circuit outputs must fit in a single Solana callback tx (~1232 bytes).
-Each encrypted scalar = 32 bytes. Plan accordingly or split into multiple computations.
-- `EncData<T>`: ciphertext only (no key/nonce). Extract via `observer.from_arcis(result).data`. Saves ~48 bytes per output.
-- `Pack<T>`: ~26x compression for byte arrays. `Pack::new(data)` / `.unpack()`.
-
-### Division by Secret Zero
-Dividing by a secret value that is zero = undefined behavior (garbage result, no error).
-Unlike normal Rust which panics, MPC silently produces wrong output.
-Guard: `let safe_d = if d != 0 { d } else { 1 }; let r = if d != 0 { n / safe_d } else { 0 };`
-
-### Float Limitations
-`f64`/`f32` = fixed-point (52 fractional bits), NOT IEEE 754.
-Range: `[-2^75, 2^75)`. Literals outside range -> compile error. Computed values outside range -> **silently clamped**.
-
-### ArgBuilder: Shared vs Mxe
-`Enc<Shared, T>` needs `.x25519_pubkey()` + `.plaintext_u128(nonce)` before ciphertexts.
-`Enc<Mxe, T>` needs only `.plaintext_u128(nonce)` before ciphertexts.
-Omitting x25519_pubkey = silent failure. See [troubleshooting](references/troubleshooting.md#argbuilder-ordering-errors).
-
-### Callback Account Constraints
-Accounts cannot be created or resized during callbacks. Initialize in the queue function (`init_if_needed`), update in callback (`#[account(mut)]`). Mark writable in BOTH `CallbackAccount::new(..., true, ...)` AND `#[account(mut)]`.
-
 ## Project Structure
 
 ```
@@ -189,6 +126,28 @@ my-project/
 ├── programs/*/src/lib.rs     # Anchor program
 └── tests/*.ts                # TypeScript tests
 ```
+
+## Verification Checklist
+
+**Circuit:**
+- [ ] `arcium build` compiles without errors
+- [ ] No `break`/`continue`/`return`/variable-length loops
+- [ ] `#[instruction]` fn names are consistent across all macros
+
+**Program:**
+- [ ] Every circuit fn has init + invoke + callback instructions
+- [ ] `#[arcium_callback(encrypted_ix = "...")]` matches circuit fn name exactly
+- [ ] Extra callback accounts passed via `CallbackAccount { pubkey, is_writable: true }` AND `#[account(mut)]` in callback struct
+
+**Client:**
+- [ ] Unique nonce per encryption (no reuse across calls)
+- [ ] ArgBuilder call order matches circuit fn parameter order left-to-right
+- [ ] `.x25519_pubkey()` included for every `Enc<Shared, T>` parameter
+- [ ] Cluster offset matches deployment environment
+
+**Deploy:**
+- [ ] `arcium test` passes locally before deploy
+- [ ] RPC endpoint is reliable (not default Solana RPC)
 
 ## Resources
 

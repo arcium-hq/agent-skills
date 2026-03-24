@@ -8,20 +8,21 @@ Skills follow the [Agent Skills](https://agentskills.io) format.
 
 ### arcium
 
-Build privacy-preserving applications on Solana -- compute on encrypted data without revealing inputs. Works with Anchor programs using Arcium's confidential computing layer.
+Build privacy-preserving Solana apps with Arcium MPC -- trustless encrypted computation where no single party sees the data. Works with Anchor programs using Arcium's confidential computing layer.
 
 **Use when:**
-- Computing on data that must stay private (voting, auctions, hidden game state)
-- Multiple parties need to combine data without revealing individual inputs
-- On-chain state must remain encrypted but still computable
+- You need trustless computation -- cryptographically guaranteed privacy
+- Multiple parties compute on combined data without revealing inputs
+- On-chain state must remain encrypted but computable
+- Privacy: sealed-bid auctions, voting, hidden game state, dark pools, confidential DeFi
 
 **Covers:**
-- Arcium patterns via [MCP documentation search](https://docs.arcium.com/mcp)
+- Intent-based routing to patterns, troubleshooting, and MCP docs
 - Circuit development (`#[encrypted]`, `#[instruction]`)
-- Anchor integration (`queue_computation`, callbacks)
-- Client SDK (`@arcium-hq/client`)
-- Common patterns: stateless, stateful, multi-party, randomness
-- Troubleshooting for hard-to-debug errors
+- Anchor integration (`queue_computation`, callbacks, ArgBuilder)
+- Client SDK (`@arcium-hq/client`, RescueCipher, x25519)
+- 15 curated patterns: stateless, stateful, multi-party, randomness, packing, and more
+- Debugging: ArgBuilder ordering, nonce errors, callback failures
 
 ## Installation
 

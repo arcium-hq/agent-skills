@@ -57,11 +57,14 @@ pub mod adder {
             .encrypted_u64(encrypted_b)
             .build();
 
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+
         queue_computation(
-            ctx.accounts, offset, args, None,
+            ctx.accounts, offset, args,
             vec![AddCallback::callback_ix(offset, &ctx.accounts.mxe_account, &[])?],
             1, 0,
-        )
+        )?;
+        Ok(())
     }
 
     #[arcium_callback(encrypted_ix = "add")]
@@ -91,30 +94,54 @@ pub struct InitAddCompDef<'info> {
     #[account(mut, address = derive_mxe_pda!())]
     pub mxe_account: Box<Account<'info, MXEAccount>>,
     #[account(mut)]
+    /// CHECK: comp_def_account, checked by arcium program.
     pub comp_def_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_mxe_lut_pda!(mxe_account.lut_offset_slot))]
+    /// CHECK: address_lookup_table, checked by arcium program.
+    pub address_lookup_table: UncheckedAccount<'info>,
+    #[account(address = LUT_PROGRAM_ID)]
+    /// CHECK: lut_program is the Address Lookup Table program.
+    pub lut_program: UncheckedAccount<'info>,
     pub arcium_program: Program<'info, Arcium>,
     pub system_program: Program<'info, System>,
 }
 
 #[queue_computation_accounts("add", payer)]
 #[derive(Accounts)]
+#[instruction(offset: u64)]
 pub struct Add<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
+    #[account(
+        init_if_needed,
+        space = 9,
+        payer = payer,
+        seeds = [&SIGN_PDA_SEED],
+        bump,
+        address = derive_sign_pda!(),
+    )]
+    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
     #[account(address = derive_mxe_pda!())]
-    pub mxe_account: Box<Account<'info, MXEAccount>>,
-    #[account(mut, address = derive_mempool_pda!(mxe_account, ErrorCode::MempoolNotSet))]
-    pub mempool_account: Box<Account<'info, Mempool>>,
-    #[account(mut, address = derive_execpool_pda!(mxe_account, ErrorCode::ExecutingPoolNotSet))]
-    pub executing_pool: Box<Account<'info, ExecutingPool>>,
-    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_ADD))]
-    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
-    #[account(mut)]
+    pub mxe_account: Account<'info, MXEAccount>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account, ErrorCode::ClusterNotSet))]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account, ErrorCode::ClusterNotSet))]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(offset, mxe_account, ErrorCode::ClusterNotSet))]
+    /// CHECK: computation_account, checked by the arcium program.
     pub computation_account: UncheckedAccount<'info>,
-    #[account(address = derive_cluster_pda!(mxe_account, ErrorCode::ClusterNotSet))]
-    pub cluster_account: Box<Account<'info, Cluster>>,
-    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_ADD))]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account, ErrorCode::ClusterNotSet))]
+    pub cluster_account: Account<'info, Cluster>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Account<'info, FeePool>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Account<'info, ClockAccount>,
     pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
 }
 
 #[callback_accounts("add")]
@@ -136,10 +163,8 @@ pub struct AddCallback<'info> {
 pub enum ErrorCode {
     #[msg("Cluster not set")]
     ClusterNotSet,
-    #[msg("Mempool not set")]
-    MempoolNotSet,
-    #[msg("Executing pool not set")]
-    ExecutingPoolNotSet,
+    #[msg("Aborted computation")]
+    AbortedComputation,
 }
 ```
 
