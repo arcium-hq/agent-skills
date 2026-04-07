@@ -107,7 +107,7 @@ Formula: `ciphertext_size = 32 * number_of_scalar_values`. See [troubleshooting.
 
 ### Tips
 - Prefer arithmetic over comparisons (cheaper in MPC)
-- Use `u64` over `u128` when possible (fewer bits = faster)
+- Comparisons/divisions are cheaper with narrower types (`u64` vs `u128`); storage cost is identical
 
 ## CLI Quick Reference
 
@@ -115,7 +115,11 @@ Formula: `ciphertext_size = 32 * number_of_scalar_values`. See [troubleshooting.
 arcium init my-project     # Create project
 arcium build               # Compile circuits + program
 arcium test                # Run with local ARX nodes
-arcium deploy --cluster-offset <n>  # See MCP: "arcium deploy" for cluster offsets
+arcium deploy \
+  --cluster-offset <n> \
+  --recovery-set-size <n> \
+  --keypair-path <path> \
+  --rpc-url <url>          # optional but recommended; MCP: "arcium deploy"
 ```
 
 ## Project Structure

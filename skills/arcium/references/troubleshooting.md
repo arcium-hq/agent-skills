@@ -169,20 +169,25 @@ const ct2 = cipher.encrypt([value2], nonce2);
 
 ## Localnet Issues
 
-```bash
-# Reset if state is corrupted
-arcium localnet stop
-arcium localnet start
+Localnet is auto-managed. There are no separate `start`/`stop` subcommands.
 
-# Or use fresh test run
-arcium test  # Auto-manages localnet
+```bash
+# Reset corrupted state
+arcium clean    # Remove all localnet + build artifacts
+arcium test     # Rebuilds and starts fresh localnet
+
+# Run localnet without tests (stays running)
+arcium localnet
+
+# Keep localnet running after tests finish
+arcium test --detach
 ```
 
 ## CLI Errors
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| `arcium: command not found` | CLI not installed | Run `arcup install` or add `~/.cargo/bin` to PATH |
+| `arcium: command not found` | CLI not installed | `curl -sSfL https://install.arcium.com/ \| bash` or `arcup install` |
 | `Error: Docker not running` | Docker daemon not started | Start Docker Desktop or `systemctl start docker` |
 | Build fails with circuit errors | Arcis syntax issue | MCP: search "arcis syntax" for circuit reference |
 | `anchor build` fails | Anchor/Solana version mismatch | Verify Anchor 0.32.1 and Solana CLI 2.3.0 |
@@ -224,6 +229,7 @@ pub game_state: Account<'info, GameState>,
 hash: [0u8; 32],
 
 // CORRECT
+use arcium_macros::circuit_hash;
 hash: circuit_hash!("instruction_name"),
 ```
 

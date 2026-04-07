@@ -42,6 +42,7 @@ pub fn flip(input: Enc<Shared, UserChoice>) -> bool {
 State encrypted with `Mxe` persists across computations.
 
 ```rust
+#[derive(Copy, Clone)]
 pub struct VoteStats { yes: u64, no: u64 }
 
 #[instruction]
@@ -77,7 +78,10 @@ pub fn reveal_result(vote_stats_ctxt: Enc<Mxe, VoteStats>) -> bool {
 Multiple parties submit encrypted inputs.
 
 ```rust
+#[derive(Copy, Clone)]
 pub struct GameMoves { player_a_move: u8, player_b_move: u8 }
+
+#[derive(Copy, Clone)]
 pub struct PlayersMove { player: u8, player_move: u8 }
 
 #[instruction]
@@ -144,11 +148,13 @@ pub fn shuffle_and_deal_cards(
 Track highest/second-highest with encrypted comparisons. Uses `SerializedSolanaPublicKey` for bidder identity.
 
 ```rust
+#[derive(Copy, Clone)]
 pub struct Bid {
     pub bidder: SerializedSolanaPublicKey,
     pub amount: u64,
 }
 
+#[derive(Copy, Clone)]
 pub struct AuctionState {
     pub highest_bid: u64,
     pub highest_bidder: SerializedSolanaPublicKey,
@@ -231,6 +237,7 @@ for i in 0..MAX_ITEMS {
 Replace `Option<T>` with explicit flag:
 
 ```rust
+#[derive(Copy, Clone)]
 pub struct MaybeValue {
     pub value: u64,
     pub is_some: bool,
@@ -292,6 +299,7 @@ Use `SerializedSolanaPublicKey` for Solana pubkeys in circuits. Internally store
 
 ```rust
 // Circuit struct
+#[derive(Copy, Clone)]
 pub struct Bid {
     pub bidder: SerializedSolanaPublicKey,
     pub amount: u64,
@@ -355,6 +363,7 @@ Complex apps combine patterns. Here's a framework for architecting multi-pattern
 
 1. **Define state struct** with all encrypted fields:
    ```rust
+   #[derive(Copy, Clone)]
    pub struct AuctionState {
        highest_bid: u64,
        highest_bidder: SerializedSolanaPublicKey,
