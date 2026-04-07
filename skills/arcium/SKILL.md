@@ -95,6 +95,11 @@ Formula: `ciphertext_size = 32 * number_of_scalar_values`. See [troubleshooting.
 
 ## Gotchas
 
+**NEVER:**
+- NEVER reuse a nonce — every `cipher.encrypt()` call needs a fresh `randomBytes(16)`
+- NEVER combine multiple ciphertexts into one ArgBuilder call — each encrypted scalar is its own `[u8; 32]` call
+- NEVER omit `.x25519_pubkey()` for `Enc<Shared, T>` (silent failure); `Enc<Mxe, T>` skips it
+
 ### Critical (silent failures)
 - **Macro string matching**: All macro strings must exactly match `#[instruction] fn NAME` across `#[arcium_callback]`, `comp_def_offset()`, `#[init_computation_definition_accounts]`, `#[queue_computation_accounts]`, `#[callback_accounts]`
 - **ArgBuilder ordering**: Calls must match circuit parameter order left-to-right. For `Enc<Shared, T>`: `.x25519_pubkey()` then `.plaintext_u128(nonce)` then ciphertexts. For `Enc<Mxe, T>`: `.plaintext_u128(nonce)` then ciphertexts. Missing `.x25519_pubkey()` for Shared = silent failure.

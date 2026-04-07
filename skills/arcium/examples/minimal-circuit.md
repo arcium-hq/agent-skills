@@ -130,7 +130,8 @@ describe("adder", () => {
     }
     if (!mxePublicKey) throw new Error("Failed to get MXE public key after 20 attempts");
 
-    // TESTING: Ephemeral random keys
+    // TESTING ONLY — ephemeral keys, not recoverable. Do NOT use in production.
+    // Production: derive keys from wallet signature — see "Production Key Derivation" below.
     const privateKey = x25519.utils.randomSecretKey();
     const publicKey = x25519.getPublicKey(privateKey);
 
