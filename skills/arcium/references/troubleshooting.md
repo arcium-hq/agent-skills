@@ -2,6 +2,30 @@
 
 > Hard-to-debug errors and solutions. For API reference, use MCP.
 
+## Sections
+- Common Errors (quick-reference table)
+- MXE Public Key is Null
+- Computation Never Finalizes
+- Circuit Compilation Errors
+- Account Derivation Issues
+- ArgBuilder Ordering Errors
+- Ciphertext Size Mismatch
+- Nonce Errors
+- Localnet Issues
+- CLI Errors
+- Common Gotchas
+  - Account Offset Calculation Wrong
+  - Callback Account Not Written
+  - Circuit Hash Verification Failed
+  - Game State Invalid
+  - Encrypted Output Wrong Size
+- Testing Patterns
+  - Unit Test Circuit Logic
+  - Integration Test with Localnet
+  - Test State Transitions
+  - Debugging Failed Computations
+  - Test Encrypted State Updates
+
 ## Common Errors
 
 | Error | Cause | Solution |
@@ -155,20 +179,25 @@ const ct2 = cipher.encrypt([value2], nonce2);
 
 ## Localnet Issues
 
-```bash
-# Reset if state is corrupted
-arcium localnet stop
-arcium localnet start
+Localnet is auto-managed. There are no separate `start`/`stop` subcommands.
 
-# Or use fresh test run
-arcium test  # Auto-manages localnet
+```bash
+# Reset corrupted state
+arcium clean    # Remove all localnet + build artifacts
+arcium test     # Rebuilds and starts fresh localnet
+
+# Run localnet without tests (stays running)
+arcium localnet
+
+# Keep localnet running after tests finish
+arcium test --detach
 ```
 
 ## CLI Errors
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| `arcium: command not found` | CLI not installed | Run `arcup install` or add `~/.cargo/bin` to PATH |
+| `arcium: command not found` | CLI not installed | `curl -sSfL https://install.arcium.com/ \| bash` or `arcup install` |
 | `Error: Docker not running` | Docker daemon not started | Start Docker Desktop or `systemctl start docker` |
 | Build fails with circuit errors | Arcis syntax issue | MCP: search "arcis syntax" for circuit reference |
 | `anchor build` fails | Anchor/Solana version mismatch | Verify Anchor 0.32.1 and Solana CLI 2.3.0 |
@@ -192,8 +221,8 @@ arcium test  # Auto-manages localnet
 **Cause**: Writability not set in BOTH places
 **Fix**: Set BOTH:
 ```rust
-// 1. In CallbackAccount when queuing
-CallbackAccount::new(ctx.accounts.game_state.key(), true /* is_writable */, false)
+// 1. In callback_ix extra_accs when queuing
+CallbackAccount { pubkey: ctx.accounts.game_state.key(), is_writable: true }
 
 // 2. In callback accounts struct
 #[account(mut)]  // <-- This is required!
@@ -210,6 +239,7 @@ pub game_state: Account<'info, GameState>,
 hash: [0u8; 32],
 
 // CORRECT
+use arcium_macros::circuit_hash;
 hash: circuit_hash!("instruction_name"),
 ```
 
@@ -301,7 +331,7 @@ it("rejects invalid state transition", async () => {
 | ARX nodes running | `docker ps | grep arx` |
 | Computation queued | Check computation account exists |
 | Callback registered | Verify `callback_ix` in queue call |
-| Account writability | Both `CallbackAccount::new(..., true, ...)` AND `#[account(mut)]` |
+| Account writability | Both `CallbackAccount { pubkey, is_writable: true }` in `callback_ix` AND `#[account(mut)]` in callback struct |
 | Comp def initialized | Call `init_*_comp_def` first |
 
 ### Test Encrypted State Updates

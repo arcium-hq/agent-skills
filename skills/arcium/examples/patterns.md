@@ -3,6 +3,23 @@
 > Curated examples from [arcium-hq/examples](https://github.com/arcium-hq/examples).
 > Not exhaustive - use MCP: "arcium examples" for more patterns.
 
+## Patterns
+1. Stateless (Coinflip) -- input, compute, reveal
+2. Persistent State (Voting) -- Mxe across computations
+3. Multi-Party Input (RPS) -- multiple encrypted inputs
+4. Randomness (Blackjack) -- ArcisRNG + Pack
+5. Complex Comparison (Auction) -- encrypted bid tracking
+6. Efficient Packing -- Pack\<T\> compression
+7. Boolean Flag -- simulate early exit
+8. Option-Like -- replace Option\<T\>
+9. State Machine -- enum as u8 + validation
+10. Pubkey Handling -- SerializedSolanaPublicKey
+11. Multiple Nonces -- per-party nonce tracking
+12. Combining Patterns -- architecture framework
+13. Safe Division -- guard against secret zero
+14. EncData -- smaller callbacks
+15. Filter Alternative -- manual loop replacement
+
 ## 1. Stateless Computation (Coinflip)
 
 No persistent state. Input -> Compute -> Reveal.
@@ -25,28 +42,30 @@ pub fn flip(input: Enc<Shared, UserChoice>) -> bool {
 State encrypted with `Mxe` persists across computations.
 
 ```rust
+#[derive(Copy, Clone)]
 pub struct VoteStats { yes: u64, no: u64 }
 
 #[instruction]
-pub fn init_vote_stats(mxe: Mxe) -> Enc<Mxe, VoteStats> {
-    mxe.from_arcis(VoteStats { yes: 0, no: 0 })
+pub fn init_vote_stats() -> Enc<Mxe, VoteStats> {
+    let vote_stats = VoteStats { yes: 0, no: 0 };
+    Mxe::get().from_arcis(vote_stats)
 }
 
 #[instruction]
 pub fn vote(
-    vote: Enc<Shared, UserVote>,
-    stats: Enc<Mxe, VoteStats>,
+    vote_ctxt: Enc<Shared, UserVote>,
+    vote_stats_ctxt: Enc<Mxe, VoteStats>,
 ) -> Enc<Mxe, VoteStats> {
-    let v = vote.to_arcis();
-    let mut s = stats.to_arcis();
-    if v.vote { s.yes += 1 } else { s.no += 1 }
-    stats.owner.from_arcis(s)
+    let user_vote = vote_ctxt.to_arcis();
+    let mut vote_stats = vote_stats_ctxt.to_arcis();
+    if user_vote.vote { vote_stats.yes += 1 } else { vote_stats.no += 1 }
+    vote_stats_ctxt.owner.from_arcis(vote_stats)
 }
 
 #[instruction]
-pub fn reveal_result(stats: Enc<Mxe, VoteStats>) -> bool {
-    let s = stats.to_arcis();
-    (s.yes > s.no).reveal()
+pub fn reveal_result(vote_stats_ctxt: Enc<Mxe, VoteStats>) -> bool {
+    let vote_stats = vote_stats_ctxt.to_arcis();
+    (vote_stats.yes > vote_stats.no).reveal()
 }
 ```
 
@@ -59,24 +78,27 @@ pub fn reveal_result(stats: Enc<Mxe, VoteStats>) -> bool {
 Multiple parties submit encrypted inputs.
 
 ```rust
+#[derive(Copy, Clone)]
 pub struct GameMoves { player_a_move: u8, player_b_move: u8 }
+
+#[derive(Copy, Clone)]
 pub struct PlayersMove { player: u8, player_move: u8 }
 
 #[instruction]
 pub fn player_move(
-    move_ctxt: Enc<Shared, PlayersMove>,
+    players_move_ctxt: Enc<Shared, PlayersMove>,
     game_ctxt: Enc<Mxe, GameMoves>,
 ) -> Enc<Mxe, GameMoves> {
-    let m = move_ctxt.to_arcis();
-    let mut g = game_ctxt.to_arcis();
+    let players_move = players_move_ctxt.to_arcis();
+    let mut game_moves = game_ctxt.to_arcis();
 
-    if m.player == 0 && g.player_a_move == 3 && m.player_move < 3 {
-        g.player_a_move = m.player_move;
-    } else if m.player == 1 && g.player_b_move == 3 && m.player_move < 3 {
-        g.player_b_move = m.player_move;
+    if players_move.player == 0 && game_moves.player_a_move == 3 && players_move.player_move < 3 {
+        game_moves.player_a_move = players_move.player_move;
+    } else if players_move.player == 1 && game_moves.player_b_move == 3 && players_move.player_move < 3 {
+        game_moves.player_b_move = players_move.player_move;
     }
 
-    game_ctxt.owner.from_arcis(g)
+    game_ctxt.owner.from_arcis(game_moves)
 }
 ```
 
@@ -94,24 +116,25 @@ type Hand = Pack<[u8; 11]>;
 
 #[instruction]
 pub fn shuffle_and_deal_cards(
-    mxe: Mxe, mxe_again: Mxe, client: Shared, client_again: Shared
+    client: Shared, client_again: Shared,
 ) -> (Enc<Mxe, Deck>, Enc<Mxe, Hand>, Enc<Shared, Hand>, Enc<Shared, u8>) {
     let mut initial_deck: [u8; 52] = INITIAL_DECK;
     ArcisRNG::shuffle(&mut initial_deck);
 
-    let deck = mxe.from_arcis(Pack::new(initial_deck));
+    let deck_packed: Deck = Pack::new(initial_deck);
+    let deck = Mxe::get().from_arcis(deck_packed);
 
     let mut dealer_cards = [53u8; 11];
     dealer_cards[0] = initial_deck[1];
     dealer_cards[1] = initial_deck[3];
-    let dealer_hand = mxe_again.from_arcis(Pack::new(dealer_cards));
+    let dealer_hand = Mxe::get().from_arcis(Pack::new(dealer_cards));
 
     let mut player_cards = [53u8; 11];
     player_cards[0] = initial_deck[0];
     player_cards[1] = initial_deck[2];
     let player_hand = client.from_arcis(Pack::new(player_cards));
 
-    // Multiple Mxe/Shared params needed for multiple encrypted outputs
+    // Mxe::get() for MXE-encrypted outputs, Shared params for client-encrypted outputs
     (deck, dealer_hand, player_hand, client_again.from_arcis(initial_deck[1]))
 }
 ```
@@ -125,11 +148,13 @@ pub fn shuffle_and_deal_cards(
 Track highest/second-highest with encrypted comparisons. Uses `SerializedSolanaPublicKey` for bidder identity.
 
 ```rust
+#[derive(Copy, Clone)]
 pub struct Bid {
     pub bidder: SerializedSolanaPublicKey,
     pub amount: u64,
 }
 
+#[derive(Copy, Clone)]
 pub struct AuctionState {
     pub highest_bid: u64,
     pub highest_bidder: SerializedSolanaPublicKey,
@@ -175,7 +200,7 @@ let deck_packed: Deck = Pack::new(initial_deck);  // [u8; 52] -> Pack<[u8; 52]>
 let deck_array: [u8; 52] = deck_packed.unpack();  // Pack<[u8; 52]> -> [u8; 52]
 
 // Works with Enc as expected
-let encrypted_deck: Enc<Mxe, Deck> = mxe.from_arcis(Pack::new(cards));
+let encrypted_deck: Enc<Mxe, Deck> = Mxe::get().from_arcis(Pack::new(cards));
 let cards: [u8; 52] = encrypted_deck.to_arcis().unpack();
 ```
 
@@ -212,6 +237,7 @@ for i in 0..MAX_ITEMS {
 Replace `Option<T>` with explicit flag:
 
 ```rust
+#[derive(Copy, Clone)]
 pub struct MaybeValue {
     pub value: u64,
     pub is_some: bool,
@@ -273,6 +299,7 @@ Use `SerializedSolanaPublicKey` for Solana pubkeys in circuits. Internally store
 
 ```rust
 // Circuit struct
+#[derive(Copy, Clone)]
 pub struct Bid {
     pub bidder: SerializedSolanaPublicKey,
     pub amount: u64,
@@ -336,6 +363,7 @@ Complex apps combine patterns. Here's a framework for architecting multi-pattern
 
 1. **Define state struct** with all encrypted fields:
    ```rust
+   #[derive(Copy, Clone)]
    pub struct AuctionState {
        highest_bid: u64,
        highest_bidder: SerializedSolanaPublicKey,
