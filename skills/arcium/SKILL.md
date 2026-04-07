@@ -16,7 +16,7 @@ metadata:
 
 Encrypted computation on Solana via MPC. Data stays encrypted during computation.
 
-**MCP Tool**: `SearchArciumDocs` -- query with natural language for API details, examples, and guides.
+**MCP Tool**: `search_arcium_docs` -- query with natural language for API details, examples, and guides. Pair with `get_page_arcium_docs` to fetch the full page after a search hit.
 
 ## When to Use
 
@@ -39,9 +39,9 @@ Identify what you're building, then read the linked reference before coding. MCP
 | Choose a pattern (stateless, stateful, multi-party) | [patterns.md](examples/patterns.md) | "arcium examples" |
 | Circuit syntax (`#[encrypted]`, `#[instruction]`) | [patterns.md](examples/patterns.md) | "arcis encrypted instruction" |
 | Shared vs Mxe encryption | See [Encryption Context](#encryption-context) below | "Shared vs Mxe encryption" |
-| ArgBuilder ordering / ciphertext errors | [troubleshooting.md](references/troubleshooting.md) -- ArgBuilder section | "ArgBuilder encrypted plaintext" |
-| Callback not firing / computation stuck | [troubleshooting.md](references/troubleshooting.md) -- Computation Never Finalizes | "arcium_callback queue_computation" |
-| Nonce / decryption errors | [troubleshooting.md](references/troubleshooting.md) -- Nonce Errors | "RescueCipher encrypt nonce" |
+| ArgBuilder ordering / ciphertext errors | [troubleshooting.md -- ArgBuilder Ordering Errors](references/troubleshooting.md#argbuilder-ordering-errors) | "ArgBuilder encrypted plaintext" |
+| Callback not firing / computation stuck | [troubleshooting.md -- Computation Never Finalizes](references/troubleshooting.md#computation-never-finalizes) | "arcium_callback queue_computation" |
+| Nonce / decryption errors | [troubleshooting.md -- Nonce Errors](references/troubleshooting.md#nonce-errors) | "RescueCipher encrypt nonce" |
 | Client-side encryption (RescueCipher, x25519) | [minimal-circuit.md](examples/minimal-circuit.md) -- Test section | "RescueCipher encrypt nonce" |
 | Deployment (devnet/mainnet) | MCP primary | "arcium deploy cluster-offset" |
 | Version / installation requirements | MCP primary | "arcium installation anchor solana" |
@@ -57,6 +57,8 @@ Every computation needs three functions in your Solana program:
 | `<name>_callback` | Handle result from ARX nodes | After MPC completes |
 
 ```rust
+const COMP_DEF_OFFSET_FLIP: u32 = comp_def_offset("flip");
+
 // 1. INIT (once per instruction type)
 pub fn init_flip_comp_def(ctx: Context<InitFlipCompDef>) -> Result<()> {
     init_comp_def(ctx.accounts, None, None)
@@ -108,7 +110,7 @@ Formula: `ciphertext_size = 32 * number_of_scalar_values`. See [troubleshooting.
 ### Warning (wrong results)
 - **Nonce reuse**: Same nonce for multiple encryptions = garbled output. Use unique `randomBytes(16)` per encryption.
 - **Callback account writability**: Pass extra accounts via `CallbackAccount { pubkey, is_writable: true }` in `callback_ix(..., &[...])`. Also mark `#[account(mut)]` in callback struct. Accounts cannot be created or resized during callbacks.
-- **Output struct naming**: Circuit `fn add_together` generates `AddTogetherOutput`. Single returns use `field_0` directly. Tuple returns wrap in `field_0` containing a nested struct with `field_0`, `field_1`, etc.
+- **Output struct naming**: Circuit `fn add_together` generates `AddTogetherOutput`. Single returns use `field_0` (a `SharedEncryptedStruct<1>` or `MXEEncryptedStruct<1>` with `.ciphertexts` and `.nonce`). Tuple returns nest `field_0`, `field_1`, etc.
 
 ### Tips
 - Prefer arithmetic over comparisons (cheaper in MPC)

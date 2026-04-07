@@ -104,7 +104,6 @@ pub struct AddEvent {
 ```typescript
 import * as anchor from "@coral-xyz/anchor";
 import { randomBytes } from "crypto";
-import { sha256 } from "@noble/hashes/sha256";
 import {
   getMXEPublicKey, RescueCipher, x25519, deserializeLE,
   awaitComputationFinalization, getArciumEnv, getCompDefAccOffset,
@@ -176,6 +175,8 @@ describe("adder", () => {
 For production apps, derive deterministic keys from wallet signatures:
 
 ```typescript
+import { sha256 } from "@noble/hashes/sha256";
+
 // PRODUCTION: Derive keys from wallet signature (recoverable)
 async function deriveEncryptionKeys(
   wallet: { signMessage: (msg: Uint8Array) => Promise<Uint8Array> },

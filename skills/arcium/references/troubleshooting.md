@@ -14,7 +14,17 @@
 - Localnet Issues
 - CLI Errors
 - Common Gotchas
+  - Account Offset Calculation Wrong
+  - Callback Account Not Written
+  - Circuit Hash Verification Failed
+  - Game State Invalid
+  - Encrypted Output Wrong Size
 - Testing Patterns
+  - Unit Test Circuit Logic
+  - Integration Test with Localnet
+  - Test State Transitions
+  - Debugging Failed Computations
+  - Test Encrypted State Updates
 
 ## Common Errors
 

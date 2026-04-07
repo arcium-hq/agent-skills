@@ -26,25 +26,17 @@ Build privacy-preserving Solana apps with Arcium MPC -- trustless encrypted comp
 
 ## Installation
 
-Install with [`skills`](https://skills.sh/docs) CLI:
-
 ```bash
 npx skills add arcium-hq/agent-skills
 ```
 
-Or manually:
+Auto-installs to whichever agent is detected (Claude Code, Amp, Cursor, Codex, Windsurf, and 40+ others). See [skills.sh/docs](https://skills.sh/docs) for the full list.
+
+### Manual
 
 ```bash
 git clone https://github.com/arcium-hq/agent-skills.git
 cp -r agent-skills/skills/arcium <your-skills-directory>/
-```
-
-See [skills.sh/docs](https://skills.sh/docs) for agent-specific installation paths.
-
-### amp
-
-```bash
-amp skill add arcium-hq/agent-skills
 ```
 
 ## Usage
