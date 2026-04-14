@@ -22,7 +22,7 @@ metadata:
 
 Encrypted computation on Solana via MPC. Data stays encrypted during computation. The `arcium` CLI (wraps Anchor) handles init, build, test, and deploy — use MCP for current flags and options.
 
-**MCP Tool**: `search_arcium_docs` -- query with natural language for API details, examples, and guides. Pair with `get_page_arcium_docs` to fetch the full page after a search hit.
+**MCP Tools**: `search_arcium_docs` for discovery, then `query_docs_filesystem_arcium_docs` with `head`/`cat` on the returned `.mdx` path for full-page reads (e.g., `cat /developers/arcis/mental-model.mdx`).
 
 ## When to Use
 
@@ -131,7 +131,7 @@ Formula: `ciphertext_size = 32 * number_of_scalar_values`. See [troubleshooting.
 ### Critical (silent failures)
 - **Macro string matching**: All macro strings must exactly match `#[instruction] fn NAME` across `#[arcium_callback]`, `comp_def_offset()`, `#[init_computation_definition_accounts]`, `#[queue_computation_accounts]`, `#[callback_accounts]`
 - **ArgBuilder ordering**: Calls must match circuit parameter order left-to-right. For `Enc<Shared, T>`: `.x25519_pubkey()` then `.plaintext_u128(nonce)` then ciphertexts. For `Enc<Mxe, T>`: `.plaintext_u128(nonce)` then ciphertexts. Missing `.x25519_pubkey()` for Shared = silent failure.
-- **Division by secret zero**: Guard divisors with the safe divisor pattern -- both branches execute in MPC, so the division always runs. See [patterns.md](examples/patterns.md) pattern #13.
+- **Division by secret zero**: Guard divisors with the safe divisor pattern -- both branches execute in MPC, so the division always runs. See [patterns.md — Safe Division](examples/patterns.md).
 - **Combined ciphertext arrays**: Each encrypted scalar needs a separate `[u8; 32]` ArgBuilder call — do NOT pass `[u8; 64]` for a two-scalar type. See [troubleshooting.md — Ciphertext Size Mismatch](references/troubleshooting.md#ciphertext-size-mismatch).
 
 ### Warning (wrong results)
@@ -161,12 +161,15 @@ For detailed error solutions: [troubleshooting.md](references/troubleshooting.md
 
 ## Verification Checklist
 
+> Pre-deploy gate. Run through before deploying or submitting a PR.
+
 **Circuit:**
 - [ ] `arcium build` compiles without errors
 - [ ] No `break`/`continue`/`return`/variable-length loops
 - [ ] `#[instruction]` fn names are consistent across all macros
 
 **Program:**
+- [ ] `init_*_comp_def` called before first computation (once per instruction type)
 - [ ] Every circuit fn has init + invoke + callback instructions
 - [ ] `#[arcium_callback(encrypted_ix = "...")]` matches circuit fn name exactly
 - [ ] Extra callback accounts passed via `CallbackAccount { pubkey, is_writable: true }` AND `#[account(mut)]` in callback struct
@@ -183,7 +186,7 @@ For detailed error solutions: [troubleshooting.md](references/troubleshooting.md
 
 ## Resources
 
-- **MCP tools** (primary for API details, CLI flags, deployment, versions): `search_arcium_docs` + `get_page_arcium_docs` — [docs.arcium.com/mcp](https://docs.arcium.com/mcp)
+- **MCP tools** (primary for API details, CLI flags, deployment, versions): `search_arcium_docs` + `query_docs_filesystem_arcium_docs` — [docs.arcium.com/mcp](https://docs.arcium.com/mcp)
 - **Docs**: [docs.arcium.com/developers](https://docs.arcium.com/developers/)
 - **Examples**: [github.com/arcium-hq/examples](https://github.com/arcium-hq/examples)
 - **TypeScript SDK**: [ts.arcium.com](https://ts.arcium.com/)
