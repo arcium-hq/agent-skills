@@ -22,7 +22,7 @@ metadata:
 
 Encrypted computation on Solana via MPC. Data stays encrypted during computation. The `arcium` CLI (wraps Anchor) handles init, build, test, and deploy — use MCP for current flags and options.
 
-**MCP Tools**: `search_arcium_docs` for discovery, then `query_docs_filesystem_arcium_docs` with `head`/`cat` on the returned `.mdx` path for full-page reads (e.g., `cat /developers/arcis/mental-model.mdx`).
+**MCP Tools**: `search_arcium_docs` for discovery (returns page path), then `query_docs_filesystem_arcium_docs` with `cat <path>.mdx` for full-page reads (e.g., `cat /developers/arcis/mental-model.mdx`).
 
 ## When to Use
 
@@ -46,10 +46,10 @@ Arcium apps have three coupled surfaces. Most bugs are mismatches across their b
 | **Client** (TypeScript) | Key exchange, encryption, submission, decryption | Nonce reuse, missing `.x25519_pubkey()` for Shared, param order ≠ circuit order |
 
 **MPC constraints** (from how secret sharing works):
-- Both branches of `if/else` always execute — cost = sum of both branches, not max
+- Both branches of `if/else` execute unless the condition is a compile-time constant — cost = sum of both branches, not max
 - Loops must have fixed bounds — no `while`, `break`, `continue`
 - Comparisons are expensive; arithmetic (add/multiply) is nearly free
-- `.reveal()` and `.from_arcis()` cannot be called inside conditionals
+- `.reveal()` and `.from_arcis()` cannot be called inside conditionals (exception: compile-time constant conditions)
 - All data must be fixed-size — no `Vec`, `String`, `HashMap`; use `[T; N]`
 
 ## Intent Router
@@ -78,7 +78,7 @@ Every computation needs three functions in your Solana program:
 |----------|---------|-------------|
 | `init_<name>_comp_def` | Initialize computation definition | Once per instruction |
 | `<name>` | Build args + queue computation | Each request |
-| `<name>_callback` | Handle result from ARX nodes | After MPC completes |
+| `<name>_callback` | Handle result from Arx nodes | After MPC completes |
 
 ```rust
 const COMP_DEF_OFFSET_FLIP: u32 = comp_def_offset("flip");
@@ -189,7 +189,7 @@ For detailed error solutions: [troubleshooting.md](references/troubleshooting.md
 - **MCP tools** (primary for API details, CLI flags, deployment, versions): `search_arcium_docs` + `query_docs_filesystem_arcium_docs` — [docs.arcium.com/mcp](https://docs.arcium.com/mcp)
 - **Docs**: [docs.arcium.com/developers](https://docs.arcium.com/developers/)
 - **Examples**: [github.com/arcium-hq/examples](https://github.com/arcium-hq/examples)
-- **TypeScript SDK**: [ts.arcium.com](https://ts.arcium.com/)
+- **TypeScript SDK**: [ts.arcium.com/api](https://ts.arcium.com/api)
 - **Patterns**: [patterns.md](examples/patterns.md) — 15 curated circuit patterns
 - **Troubleshooting**: [troubleshooting.md](references/troubleshooting.md) — hard-to-debug errors
 - **Minimal working app**: [minimal-circuit.md](examples/minimal-circuit.md) — circuit + program + test

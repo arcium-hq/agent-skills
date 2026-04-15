@@ -159,7 +159,7 @@ pub struct AuctionState {
     pub highest_bid: u64,
     pub highest_bidder: SerializedSolanaPublicKey,
     pub second_highest_bid: u64,
-    pub bid_count: u8,
+    pub bid_count: u16,
 }
 
 #[instruction]
@@ -263,7 +263,8 @@ if maybe.is_some {
 Use enums for game state, validate transitions before processing:
 
 ```rust
-// In Solana program (not circuit - enums not supported in Arcis)
+// In Solana program (not circuit — enums not supported in Arcis)
+#[repr(u8)]
 pub enum GameState {
     Initial = 0,
     PlayerTurn = 1,
@@ -273,16 +274,16 @@ pub enum GameState {
 }
 
 #[account]
-pub struct Game {
-    pub game_state: u8,  // Store as u8
-    pub encrypted_deck: [u8; 96],
+pub struct BlackjackGame {
+    pub game_state: GameState,
+    pub deck: [[u8; 32]; 2],
     // ...
 }
 
 // Always validate state before transition
-pub fn player_hit(ctx: Context<PlayerHit>) -> Result<()> {
+pub fn player_hit(ctx: Context<PlayerHit>, computation_offset: u64, _game_id: u64) -> Result<()> {
     require!(
-        ctx.accounts.game.game_state == GameState::PlayerTurn as u8,
+        ctx.accounts.blackjack_game.game_state == GameState::PlayerTurn,
         ErrorCode::InvalidGameState
     );
     // ... queue computation
@@ -333,7 +334,7 @@ When tracking different encrypted states for different parties:
 
 ```rust
 #[account]
-pub struct Game {
+pub struct BlackjackGame {
     pub deck_nonce: u128,    // For deck encryption
     pub client_nonce: u128,  // For player hand
     pub dealer_nonce: u128,  // For dealer hand

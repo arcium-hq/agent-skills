@@ -119,7 +119,7 @@ describe("adder", () => {
     // Init comp def (once)
     await program.methods.initAddCompDef().rpc();
 
-    // ARX nodes may take time to initialize after MXE account creation
+    // Arx nodes may take time to initialize after MXE account creation
     // Retry with backoff until public key is available
     let mxePublicKey: Uint8Array | null = null;
     for (let i = 0; i < 20; i++) {

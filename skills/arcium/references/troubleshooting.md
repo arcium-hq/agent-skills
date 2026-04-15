@@ -30,7 +30,7 @@
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| "Failed to fetch MXE public key" | ARX nodes not ready | Add retry with exponential backoff |
+| "Failed to fetch MXE public key" | Arx nodes not ready | Add retry with exponential backoff |
 | Computation never finalizes | Missing/incorrect callback | Verify `callback_ix` registration |
 | Type mismatch in circuit | `Enc` owner inconsistency | Match `Shared`/`Mxe` throughout |
 | "Stack height exceeded" | Too many CPIs (Cross-Program Invocations) | Reduce instruction nesting |
@@ -67,7 +67,7 @@ async function getMXEPublicKeyWithRetry(provider, programId, maxRetries = 20) {
 
 1. Check callback instruction name: `#[arcium_callback(encrypted_ix = "flip")]`
 2. Verify callback registered: `vec![FlipCallback::callback_ix(...)]`
-3. Check ARX nodes running: `docker ps` shows arx containers
+3. Check Arx nodes running: `docker ps` shows arx containers
 
 ## Circuit Compilation Errors
 
@@ -175,7 +175,7 @@ const nonce2 = randomBytes(16);
 const ct2 = cipher.encrypt([value2], nonce2);
 ```
 
-**Note**: After MXE decrypts inputs, it increments the nonce by 1 before encrypting outputs. This is handled automatically.
+**Note**: After MXE decrypts inputs, it increments the nonce by 1 before encrypting outputs. For subsequent computations, you must provide a fresh nonce.
 
 ## Localnet Issues
 
@@ -250,7 +250,7 @@ hash: circuit_hash!("instruction_name"),
 **Fix**: Always validate state before transitioning:
 ```rust
 require!(
-    game.game_state == GameState::PlayerTurn as u8,
+    ctx.accounts.blackjack_game.game_state == GameState::PlayerTurn,
     ErrorCode::InvalidGameState
 );
 ```
@@ -290,7 +290,7 @@ mod tests {
 ```typescript
 describe("my_app", () => {
   before(async () => {
-    // `arcium test` auto-starts localnet with ARX nodes
+    // `arcium test` auto-starts localnet with Arx nodes
   });
 
   it("initializes computation definition", async () => {
@@ -328,7 +328,7 @@ it("rejects invalid state transition", async () => {
 
 | Check | Command/Action |
 |-------|----------------|
-| ARX nodes running | `docker ps | grep arx` |
+| Arx nodes running | `docker ps | grep arx` |
 | Computation queued | Check computation account exists |
 | Callback registered | Verify `callback_ix` in queue call |
 | Account writability | Both `CallbackAccount { pubkey, is_writable: true }` in `callback_ix` AND `#[account(mut)]` in callback struct |
