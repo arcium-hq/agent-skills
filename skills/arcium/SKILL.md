@@ -22,7 +22,11 @@ metadata:
 
 Encrypted computation on Solana via MPC. Data stays encrypted during computation. The `arcium` CLI (wraps Anchor) handles init, build, test, and deploy — use MCP for current flags and options.
 
+> **Targets Arcium v0.10.x** (Anchor 1.0.2, Solana 3.1.10). Upgrading from v0.9.x? See the [v0.9 → v0.10 migration guide](https://docs.arcium.com/developers/migration/migration-v0.9.0-to-v0.10.0) — breaking changes include `init_comp_def` → `init_computation_def`, npm `@coral-xyz/anchor` → `@anchor-lang/core`, and `Box<…>` required on queue-side Arcium accounts.
+
 **MCP Tools**: `search_arcium_docs` for discovery (returns page path), then `query_docs_filesystem_arcium_docs` with `cat <path>.mdx` for full-page reads (e.g., `cat /developers/arcis/mental-model.mdx`).
+
+**No MCP?** Use the docs directly: [`docs.arcium.com/llms.txt`](https://docs.arcium.com/llms.txt) for the page index, or [`llms-full.txt`](https://docs.arcium.com/llms-full.txt) for all docs in one file.
 
 ## When to Use
 
@@ -46,11 +50,12 @@ Arcium apps have three coupled surfaces. Most bugs are mismatches across their b
 | **Client** (TypeScript) | Key exchange, encryption, submission, decryption | Nonce reuse, missing `.x25519_pubkey()` for Shared, param order ≠ circuit order |
 
 **MPC constraints** (from how secret sharing works):
-- Both branches of `if/else` execute unless the condition is a compile-time constant — cost = sum of both branches, not max
+- Both branches of `if/else` execute unless the condition is a compile-time constant — cost = sum of both branches, not max. **Same rule applies to non-constant `match` arms and `if let`** — all reachable arms execute.
 - Loops must have fixed bounds — no `while`, `break`, `continue`
 - Comparisons are expensive; arithmetic (add/multiply) is nearly free
-- `.reveal()` and `.from_arcis()` cannot be called inside conditionals (exception: compile-time constant conditions)
+- `.reveal()` and `.from_arcis()` cannot be called inside conditionals (exception: compile-time constant conditions; also forbidden inside non-constant `match` arms and guards)
 - All data must be fixed-size — no `Vec`, `String`, `HashMap`; use `[T; N]`
+- Pattern matching (`match`, `if let`, `matches!`) is supported in v0.10+. Last `match` arms cannot have guards. Let chains require `edition = "2024"` in `encrypted-ixs/Cargo.toml`.
 
 ## Intent Router
 
@@ -66,9 +71,13 @@ Identify what you're building, then read the linked reference before coding. For
 | Callback not firing / computation stuck | [troubleshooting.md -- Computation Never Finalizes](references/troubleshooting.md#computation-never-finalizes) | "arcium_callback queue_computation" |
 | Nonce / decryption errors | [troubleshooting.md -- Nonce Errors](references/troubleshooting.md#nonce-errors) | "RescueCipher encrypt nonce" |
 | Client-side encryption (RescueCipher, x25519) | [minimal-circuit.md](examples/minimal-circuit.md) -- Test section | "RescueCipher encrypt nonce" |
-| Threshold signing / secure randomness | — | "MXESigningKey sign" or "ArcisRNG" |
+| Threshold signing / secure randomness | [patterns.md](examples/patterns.md) | "MXESigningKey sign" or "ArcisRNG" |
+| Re-encryption / sealing | [patterns.md](examples/patterns.md) | "arcium sealing re-encryption" |
 | Deployment (devnet/mainnet) | — | "arcium deploy cluster-offset" |
-| Version / installation requirements | — | "arcium installation anchor solana" |
+| CI / GitHub Actions | [setup-arcium](https://github.com/arcium-hq/setup-arcium) | "arcium github actions ci" |
+| Version / installation requirements | [installation docs](https://docs.arcium.com/developers/installation) | "arcium installation anchor solana" |
+| Upgrading from v0.9.x to v0.10.x | [migration guide](https://docs.arcium.com/developers/migration/migration-v0.9.0-to-v0.10.0) | "v0.10 migration" |
+| Closing MXE / comp def to reclaim rent | — | "deactivate close computation definition" |
 
 ## Core Pattern: Three Functions
 
@@ -83,9 +92,9 @@ Every computation needs three functions in your Solana program:
 ```rust
 const COMP_DEF_OFFSET_FLIP: u32 = comp_def_offset("flip");
 
-// 1. INIT (once per instruction type)
+// 1. INIT (once per instruction type) — v0.10+ helper is `init_computation_def` (2 args)
 pub fn init_flip_comp_def(ctx: Context<InitFlipCompDef>) -> Result<()> {
-    init_comp_def(ctx.accounts, None, None)
+    init_computation_def(ctx.accounts, None)
 }
 
 // 2. QUEUE (each computation)
@@ -129,6 +138,7 @@ Formula: `ciphertext_size = 32 * number_of_scalar_values`. See [troubleshooting.
 - NEVER omit `.x25519_pubkey()` for `Enc<Shared, T>` (silent failure); `Enc<Mxe, T>` skips it
 
 ### Critical (silent failures)
+- **Box-wrap queue-side Arcium accounts (v0.10+)**: In `#[queue_computation_accounts]`, follow generated templates and wrap heavy accounts: `Box<Account<'info, MXEAccount>>`, `Box<Account<'info, Cluster>>`, `Box<Account<'info, ComputationDefinitionAccount>>`. Unboxed queue accounts can exceed Anchor/Solana stack limits. Callback-side (`#[callback_accounts]`) can stay unboxed.
 - **Macro string matching**: All macro strings must exactly match `#[instruction] fn NAME` across `#[arcium_callback]`, `comp_def_offset()`, `#[init_computation_definition_accounts]`, `#[queue_computation_accounts]`, `#[callback_accounts]`
 - **ArgBuilder ordering**: Calls must match circuit parameter order left-to-right. For `Enc<Shared, T>`: `.x25519_pubkey()` then `.plaintext_u128(nonce)` then ciphertexts. For `Enc<Mxe, T>`: `.plaintext_u128(nonce)` then ciphertexts. Missing `.x25519_pubkey()` for Shared = silent failure.
 - **Division by secret zero**: Guard divisors with the safe divisor pattern -- both branches execute in MPC, so the division always runs. See [patterns.md — Safe Division](examples/patterns.md).
@@ -183,13 +193,17 @@ For detailed error solutions: [troubleshooting.md](references/troubleshooting.md
 **Deploy:**
 - [ ] `arcium test` passes locally before deploy
 - [ ] RPC endpoint is reliable (not default Solana RPC)
+- [ ] CI pins `setup-arcium` and explicit Arcium/Anchor/Solana versions for reproducible toolchain installs
 
 ## Resources
 
 - **MCP tools** (primary for API details, CLI flags, deployment, versions): `search_arcium_docs` + `query_docs_filesystem_arcium_docs` — [docs.arcium.com/mcp](https://docs.arcium.com/mcp)
-- **Docs**: [docs.arcium.com/developers](https://docs.arcium.com/developers/)
+- **Docs**: [docs.arcium.com/developers](https://docs.arcium.com/developers/) — no-MCP fallback: [llms.txt](https://docs.arcium.com/llms.txt) (index), [llms-full.txt](https://docs.arcium.com/llms-full.txt) (full)
+- **v0.9 → v0.10 migration**: [migration guide](https://docs.arcium.com/developers/migration/migration-v0.9.0-to-v0.10.0)
+- **Account lifecycle / closing**: [account-lifecycle](https://docs.arcium.com/developers/program/account-lifecycle) — `deactivate-computation-definition` → TTL (180 slots) → `close-computation-definition` / `close-mxe`
 - **Examples**: [github.com/arcium-hq/examples](https://github.com/arcium-hq/examples)
-- **TypeScript SDK**: [ts.arcium.com/api](https://ts.arcium.com/api)
-- **Patterns**: [patterns.md](examples/patterns.md) — 15 curated circuit patterns
+- **CI / GitHub Actions**: [github.com/arcium-hq/setup-arcium](https://github.com/arcium-hq/setup-arcium) — GitHub Action for CI toolchain installs; set Arcium/Anchor/Solana versions explicitly for v0.10.x instead of relying on defaults
+- **TypeScript SDK**: `@arcium-hq/client` + `@arcium-hq/reader` (subscribe to computation events) — [ts.arcium.com/api](https://ts.arcium.com/api)
+- **Patterns**: [patterns.md](examples/patterns.md) — 17 curated circuit patterns
 - **Troubleshooting**: [troubleshooting.md](references/troubleshooting.md) — hard-to-debug errors
 - **Minimal working app**: [minimal-circuit.md](examples/minimal-circuit.md) — circuit + program + test

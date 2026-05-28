@@ -19,6 +19,8 @@
 13. Safe Division -- guard against secret zero
 14. EncData -- smaller callbacks
 15. Filter Alternative -- manual loop replacement
+16. Threshold Signing (Ed25519) -- distributed key management
+17. Re-encryption / Sealing (Medical Records) -- owner-to-owner data sharing
 
 ## 1. Stateless Computation (Coinflip)
 
@@ -459,6 +461,24 @@ fn filter_above(arr: [u8; 32], threshold: u8) -> ([u8; 32], u8) {
 ```
 
 Same approach works for `.find()`, `.any()`, `.all()` -- accumulate into fixed-size output.
+
+---
+
+## 16. Threshold Signing (Ed25519)
+
+Distributed key management — the private key never exists in one place; signing happens across MPC nodes via `MXESigningKey`. Backs the "threshold signing" use case.
+
+**Source**: [`ed25519/encrypted-ixs/src/lib.rs`](https://github.com/arcium-hq/examples/blob/main/ed25519/encrypted-ixs/src/lib.rs)
+> For `MXESigningKey` API details, MCP: "MXESigningKey sign".
+
+---
+
+## 17. Sealing / Re-encryption (Medical Records)
+
+Re-encode data for a new owner (a third party's `Shared` pubkey) without exposing plaintext to anyone but them — canonical docs call this **sealing**. The pattern: take a `Shared` parameter representing the recipient, then `recipient.from_arcis(value)` to seal the output to their key. Backs the "Identity (credit check) — Re-encryption (Sealing)" row in the combinations table above.
+
+**Source**: [`share_medical_records/encrypted-ixs/src/lib.rs`](https://github.com/arcium-hq/examples/blob/main/share_medical_records/encrypted-ixs/src/lib.rs)
+**Docs**: [Sealing (re-encoding)](https://docs.arcium.com/developers/encryption/sealing)
 
 ---
 

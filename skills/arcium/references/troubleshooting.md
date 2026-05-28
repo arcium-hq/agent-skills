@@ -34,7 +34,9 @@
 | Computation never finalizes | Missing/incorrect callback | Verify `callback_ix` registration |
 | Type mismatch in circuit | `Enc` owner inconsistency | Match `Shared`/`Mxe` throughout |
 | "Stack height exceeded" | Too many CPIs (Cross-Program Invocations) | Reduce instruction nesting |
-| "Account not initialized" | Missing `init_comp_def` | Call initialization first |
+| "Account not initialized" | Missing `init_computation_def` call | Call initialization first (helper was `init_comp_def` in v0.9, renamed in v0.10) |
+| Stack overflow on queue (v0.10) | `MXEAccount` / `Cluster` / `ComputationDefinitionAccount` not boxed | Wrap in `Box<Account<'info, …>>` in `#[queue_computation_accounts]` |
+| Callback `verify_output` returned `Err` | Failed computation, BLS verification failure, or output deserialization failure | Log the error and return `AbortedComputation`; inspect Arcium failure events for structured `ExecutionFailure` details |
 | "Invalid cluster" | Wrong network | Verify cluster offset |
 | "Decryption failed" / garbled output | Nonce reuse or mismatch | Use unique nonce per encryption |
 | Ciphertext size mismatch | Wrong array size | Each value = 32 bytes (see table below) |
@@ -68,6 +70,7 @@ async function getMXEPublicKeyWithRetry(provider, programId, maxRetries = 20) {
 1. Check callback instruction name: `#[arcium_callback(encrypted_ix = "flip")]`
 2. Verify callback registered: `vec![FlipCallback::callback_ix(...)]`
 3. Check Arx nodes running: `docker ps` shows arx containers
+4. If the callback fires but `verify_output` returns `Err`, log the Anchor error and return `AbortedComputation`. Structured reasons such as `ExecutionFailure::CircuitFailure(...)` are recorded on the Arcium failure path, not returned by `verify_output`: `Err(e) => { msg!("Error: {}", e); return Err(ErrorCode::AbortedComputation.into()); }`
 
 ## Circuit Compilation Errors
 
@@ -193,14 +196,53 @@ arcium localnet
 arcium test --detach
 ```
 
+### Speeding up localnet reruns (v0.10+)
+
+**Targeted single test** (independent of keygen cache):
+
+```bash
+# Runs only tests/<name>.ts by temporarily rewriting Anchor.toml's [scripts] test glob.
+# If the run is killed (Ctrl-C / SIGKILL), restore the original glob manually.
+arcium test --test-name my_test
+```
+
+**Reusing cached MXE keys** with `--skip-keygen` — requires a populated cache first, or the CLI errors:
+
+```
+--skip-keygen requires a previous successful run: missing cache at <path>
+Run `arcium test` (without `--skip-keygen`) at least once first.
+```
+
+The cache gets populated automatically at the end of every non-detached `arcium test` run (an internal `snapshot-mxe-keygen` call). Order:
+
+```bash
+# 1) Prime the cache (one-time, or after `arcium clean`). Non-detached.
+arcium test
+
+# 2) Now subsequent runs can skip keygen:
+arcium test --skip-keygen
+arcium localnet --skip-keygen
+```
+
+`--detach` does **not** auto-snapshot (the validator outlives the CLI). Snapshot yourself before teardown:
+
+```bash
+arcium test --detach
+# ... interact with the running validator ...
+arcium snapshot-mxe-keygen --rpc-url l   # `l` = localnet shorthand
+# then tear down
+```
+
+`--skip-keygen` also exports `ARCIUM_SKIP_KEY_RECOVERY_INIT=1` into the test environment. Custom tests that unconditionally queue key-recovery-init must honor this flag or they'll fail on `--skip-keygen` reruns.
+
 ## CLI Errors
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| `arcium: command not found` | CLI not installed | `curl -sSfL https://install.arcium.com/ \| bash` or `arcup install` |
+| `arcium: command not found` | CLI not installed | `curl --proto '=https' --tlsv1.2 -sSfL https://install.arcium.com/ \| bash` or `arcup install` |
 | `Error: Docker not running` | Docker daemon not started | Start Docker Desktop or `systemctl start docker` |
 | Build fails with circuit errors | Arcis syntax issue | MCP: search "arcis syntax" for circuit reference |
-| `anchor build` fails | Anchor/Solana version mismatch | Verify Anchor 0.32.1 and Solana CLI 2.3.0 |
+| `anchor build` fails | Anchor/Solana version mismatch | Match the toolchain to [installation docs](https://docs.arcium.com/developers/installation) (current: Anchor 1.0.2, Solana 3.1.10); for CI, pin [`setup-arcium`](https://github.com/arcium-hq/setup-arcium) and set versions explicitly |
 
 ## Common Gotchas
 

@@ -22,7 +22,7 @@ Build and debug encrypted Solana applications with Arcium — data stays private
 - Circuit development (`#[encrypted]`, `#[instruction]`, Shared vs Mxe encryption)
 - Anchor integration (`queue_computation`, callbacks, ArgBuilder)
 - Client SDK (`@arcium-hq/client`, RescueCipher, x25519)
-- 15 curated patterns: stateless, stateful, multi-party, randomness, packing, and more
+- 17 curated patterns: stateless, stateful, multi-party, randomness, packing, threshold signing, sealing, and more
 - Debug triage order + gotchas for silent failures
 - Verification checklist for circuit, program, client, and deploy
 
@@ -62,8 +62,11 @@ Each skill contains:
 
 ## Resources
 
-- [Arcium Docs](https://docs.arcium.com/developers/)
+- [Arcium Docs](https://docs.arcium.com/developers/) — agents without MCP can use [llms.txt](https://docs.arcium.com/llms.txt) (index) or [llms-full.txt](https://docs.arcium.com/llms-full.txt) (full)
+- [Docs MCP server](https://docs.arcium.com/mcp)
 - [Examples Repo](https://github.com/arcium-hq/examples)
+- [setup-arcium](https://github.com/arcium-hq/setup-arcium) — GitHub Action installing the Arcium + Anchor + Solana toolchain for CI; configure v0.10.x versions explicitly
+- [TypeScript SDK API](https://ts.arcium.com/api)
 
 ## License
 
