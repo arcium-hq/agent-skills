@@ -1,0 +1,55 @@
+{
+  "skill_name": "arcium",
+  "evals": [
+    {
+      "id": 1,
+      "name": "shared-vs-mxe-auction",
+      "prompt": "I'm building a sealed-bid auction on Arcium. Bidders submit encrypted bids; the program keeps a running highest-bid+winner across bids; at close, reveal only the winner and winning price, losing bids stay secret. For (1) a submitted bid, (2) the running highest-bid state stored across computations, and (3) the final result, which encryption (Enc<Shared,T>, Enc<Mxe,T>, or .reveal()) for each, and what breaks if I use the wrong owner for the running state?",
+      "expected_output": "Maps bid input to Shared, persisted auction state to Mxe, public final result to reveal, and explains the confidentiality/silent-garbage failure mode.",
+      "files": [],
+      "expectations": [
+        "Chooses Enc<Shared, T> for the submitted bid",
+        "Chooses Enc<Mxe, T> for the running highest-bid state",
+        "Chooses .reveal() for the final public result",
+        "Explains a wrong owner on the running state leaks aggregate state to one client's key and/or yields garbage when later decrypted with a different client key or nonce"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "getting-started-terminology",
+      "prompt": "I'm new to Arcium. Explain what an MXE is, what an Arx node is, what a computation definition (comp def) is, and what Arcis is, then outline the minimal flow for my first app.",
+      "expected_output": "Defines the core terms correctly and gives the init/build/test/deploy shape for a first Arcium app.",
+      "files": [],
+      "expectations": [
+        "Expands MXE as MPC eXecution Environment and describes it as the whole app (program + Arcis circuits + on-chain account)",
+        "Defines Arx node as an MPC node holding secret shares",
+        "Defines comp def as an on-chain account holding the circuit's compiled bytecode, initialized once per instruction",
+        "Defines Arcis as the Rust framework for confidential circuits",
+        "Invents no incorrect acronym expansions"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "scope-negative-token2022",
+      "prompt": "I want to add Token-2022 confidential transfers to my Solana program so token balances are hidden. How do I wire that up?",
+      "expected_output": "Routes the user away from Arcium-specific circuit guidance and toward Solana Token-2022 confidential transfers.",
+      "files": [],
+      "expectations": [
+        "Identifies Token-2022 confidential transfers as Solana-native, not an Arcium/MPC use case",
+        "Does not force an Arcium circuit / queue_computation solution onto the task"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "argbuilder-silent-failure-control",
+      "prompt": "My Arcium computation runs but the decrypted result is garbage. The circuit takes Enc<Shared, MyStruct>. My ArgBuilder is .plaintext_u128(nonce).encrypted_u64(ct). What's wrong?",
+      "expected_output": "Diagnoses missing Shared x25519 pubkey before nonce/ciphertext and classifies it as silent-failure wiring.",
+      "files": [],
+      "expectations": [
+        "Identifies the missing .x25519_pubkey() call required for Enc<Shared, T>",
+        "States .x25519_pubkey() must precede the nonce and ciphertexts in ArgBuilder order",
+        "Frames it as a silent-failure class bug"
+      ]
+    }
+  ]
+}
