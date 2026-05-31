@@ -184,10 +184,10 @@ describe("adder", () => {
 
 ## Production Key Derivation
 
-For production apps, derive deterministic keys from wallet signatures:
+For production apps, derive deterministic keys from a wallet signature so users recover encrypted data across devices (same wallet + message -> same keys). Add `@noble/hashes` as a direct app dependency if you use this pattern:
 
 ```typescript
-import { sha256 } from "@noble/hashes/sha256";
+import { sha256 } from "@noble/hashes/sha2.js"; // Works in @noble/hashes 1.8+ and 2.x
 
 // PRODUCTION: Derive keys from wallet signature (recoverable)
 async function deriveEncryptionKeys(
@@ -206,3 +206,5 @@ const { privateKey, publicKey } = await deriveEncryptionKeys(wallet, program.pro
 const sharedSecret = x25519.getSharedSecret(privateKey, mxePublicKey);
 const cipher = new RescueCipher(sharedSecret);
 ```
+
+**Security:** the signature *is* the master secret — anyone who captures it can derive these keys and decrypt all the user's data, and it cannot be rotated without changing the message. Requires a **deterministic** signature over a fixed, domain-separated message (as above); a wallet that injects randomness breaks recovery.
