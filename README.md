@@ -22,7 +22,7 @@ Build and debug encrypted Solana applications with Arcium — data stays private
 - Circuit development (`#[encrypted]`, `#[instruction]`, Shared vs Mxe encryption)
 - Anchor integration (`queue_computation`, callbacks, ArgBuilder)
 - Client SDK (`@arcium-hq/client`, RescueCipher, x25519)
-- 17 curated patterns: stateless, stateful, multi-party, randomness, packing, threshold signing, sealing, and more
+- Curated circuit patterns: stateless, stateful, multi-party, randomness, packing, threshold signing, sealing, and more
 - Debug triage order + gotchas for silent failures
 - Verification checklist for circuit, program, client, and deploy
 
