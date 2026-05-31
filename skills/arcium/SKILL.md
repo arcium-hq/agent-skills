@@ -10,7 +10,9 @@ description: >
   finalization failures. Covers dark pools, sealed-bid auctions, encrypted
   voting, hidden game state, confidential DeFi, secure randomness, and
   threshold signing. Also use for getting started with your first
-  Arcium app.
+  Arcium app. SKIP: generic Solana programs without encrypted compute,
+  AES or wallet-only encryption client code, MPC theory not tied to
+  Arcium, or Token-2022 confidential transfers.
 license: MIT
 compatibility: Bundled mcp.json configures the Arcium MCP server automatically.
 metadata:
@@ -20,7 +22,7 @@ metadata:
 
 # Arcium
 
-Encrypted computation on Solana via MPC. Data stays encrypted during computation. The `arcium` CLI (wraps Anchor) handles init, build, test, and deploy — use MCP for current flags and options.
+Encrypted computation on Solana via MPC. Data stays encrypted during computation. Your confidential app — a Solana program + Arcis circuits (the Rust circuit framework) + an on-chain metadata account — is an **MXE** (MPC eXecution Environment). The `arcium` CLI (wraps Anchor) handles init, build, test, and deploy — use MCP for current flags and options.
 
 > **Targets Arcium v0.10.x** (Anchor 1.0.2, Solana 3.1.10). Upgrading from v0.9.x? See the [v0.9 → v0.10 migration guide](https://docs.arcium.com/developers/migration/migration-v0.9.0-to-v0.10.0) — breaking changes include `init_comp_def` → `init_computation_def`, npm `@coral-xyz/anchor` → `@anchor-lang/core`, and `Box<…>` required on queue-side Arcium accounts.
 
@@ -64,6 +66,7 @@ Identify what you're building, then read the linked reference before coding. For
 | Intent | Read | MCP Query |
 |--------|------|-----------|
 | First Arcium app | [minimal-circuit.md](examples/minimal-circuit.md) | "hello world tutorial" |
+| Core concepts / terminology (MXE, Arx, comp def) | [core-concepts](https://docs.arcium.com/developers/core-concepts) | "arcium core concepts" |
 | Choose a pattern (stateless, stateful, multi-party) | [patterns.md](examples/patterns.md) | "arcium examples" |
 | Circuit syntax (`#[encrypted]`, `#[instruction]`) | [patterns.md](examples/patterns.md) | "arcis encrypted instruction" |
 | Shared vs Mxe encryption | See [Encryption Context](#encryption-context) below | "Shared vs Mxe encryption" |
@@ -85,9 +88,9 @@ Every computation needs three functions in your Solana program:
 
 | Function | Purpose | When Called |
 |----------|---------|-------------|
-| `init_<name>_comp_def` | Initialize computation definition | Once per instruction |
+| `init_<name>_comp_def` | Init computation definition — on-chain account holding the circuit's compiled bytecode | Once per instruction |
 | `<name>` | Build args + queue computation | Each request |
-| `<name>_callback` | Handle result from Arx nodes | After MPC completes |
+| `<name>_callback` | Handle result from Arx nodes (the cluster's MPC compute nodes) | After MPC completes |
 
 ```rust
 const COMP_DEF_OFFSET_FLIP: u32 = comp_def_offset("flip");
@@ -121,12 +124,16 @@ Formula: `ciphertext_size = 32 * number_of_scalar_values`. See [troubleshooting.
 
 ## Encryption Context
 
+`Enc<Owner, T>` — `Owner` is who can decrypt. Choose before writing the circuit.
+
 | Scenario | Use |
 |----------|-----|
-| User inputs, results returned to user | `Enc<Shared, T>` |
+| User submits input / result sealed back to that same user | `Enc<Shared, T>` |
 | Internal state users shouldn't access | `Enc<Mxe, T>` |
-| State persisted across computations | `Enc<Mxe, T>` |
-| Final reveal to all parties | `.reveal()` |
+| State persisted across computations (re-read by any party) | `Enc<Mxe, T>` |
+| Result revealed to *everyone* | `.reveal()` |
+
+**Wrong owner fails quietly:** persisted/multi-party state must be `Mxe` — `Shared` grants reveal capability to one client's x25519 key, leaking aggregate state to that recipient. If a different client key/nonce is used later, decryption yields garbage (MPC cannot raise a decrypt error without leaking). `Shared` also seals to *one* recipient; for a public result use `.reveal()`, not `Shared`. (Omitting `.x25519_pubkey()` on a `Shared` input is the same silent-failure class — see Gotchas.)
 
 ## Gotchas
 
@@ -204,6 +211,6 @@ For detailed error solutions: [troubleshooting.md](references/troubleshooting.md
 - **Examples**: [github.com/arcium-hq/examples](https://github.com/arcium-hq/examples)
 - **CI / GitHub Actions**: [github.com/arcium-hq/setup-arcium](https://github.com/arcium-hq/setup-arcium) — GitHub Action for CI toolchain installs; set Arcium/Anchor/Solana versions explicitly for v0.10.x instead of relying on defaults
 - **TypeScript SDK**: `@arcium-hq/client` + `@arcium-hq/reader` (subscribe to computation events) — [ts.arcium.com/api](https://ts.arcium.com/api)
-- **Patterns**: [patterns.md](examples/patterns.md) — 17 curated circuit patterns
+- **Patterns**: [patterns.md](examples/patterns.md) — curated circuit patterns (stateless, stateful, multi-party, randomness, packing, threshold signing, sealing)
 - **Troubleshooting**: [troubleshooting.md](references/troubleshooting.md) — hard-to-debug errors
 - **Minimal working app**: [minimal-circuit.md](examples/minimal-circuit.md) — circuit + program + test
